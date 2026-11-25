@@ -7,7 +7,8 @@ Design a survey in your browser, share a link, and collect responses into a
 Designer (your browser) ──publish──▶ Public repo (GitHub Pages)
 Respondent ──loads survey──────────▶ Public repo
 Respondent ──submits answers───────▶ Cloudflare Worker ──writes──▶ Private repo
-You ──R script (gh)────────────────────────────────────────────▶ Private repo
+Respondent ──popularity shading────▶ Worker /popularity (aggregate counts only)
+You ──results page / R script──────▶ Private repo (your token, browser-side)
 ```
 
 - **Public repo** (this one): the survey designer, the survey page, and survey
@@ -32,8 +33,12 @@ At https://github.com/settings/personal-access-tokens/new create two tokens:
 
 | Token | Repository access | Permission | Used by |
 |---|---|---|---|
-| Designer token | public repo only | Contents: **read & write** | designer page (stays in your browser's localStorage) |
+| Designer token | public repo (read & write) + private repo (**read-only**) | Contents | designer, private results viewer (stays in your browser's localStorage) |
 | Worker token | private repo only | Contents: **read & write** | Cloudflare Worker secret |
+
+The private-repo read on the designer token is what lets the **Results**
+page fetch responses. Without it, survey creation still works but results
+show an access error.
 
 Optionally a third read-only token on the private repo for the R script;
 the Worker token also works. Put it in `~/.Renviron` as `GITHUB_PAT=...`.
@@ -67,7 +72,8 @@ branch*, Branch = `main`, folder = `/docs`. Your site will be at
 ### 5. Configure the site
 
 Edit [docs/assets/config.js](docs/assets/config.js): set `owner`, `publicRepo`,
-and `workerUrl`. Commit and push.
+`privateRepo`, and `workerUrl`. Run `python3 scripts/bump_manifest.py`, then
+commit and push.
 
 ## Creating a survey
 
@@ -75,27 +81,67 @@ and `workerUrl`. Commit and push.
 2. Paste your **designer token** once — it is stored only in your browser.
 3. Set title, anonymity (name field on/off), duplicate prevention, and cap.
 4. Add questions: short/long text, single/multiple choice, 1–5 rating, or a
-   **meeting grid** — a when2meet-style week grid where you drag across cells
-   to pick candidate times (adjacent cells merge into one time range;
-   respondents answer yes / no / maybe for each).
+   **meeting grid** — a when2meet-style week grid in 30-minute windows.
+   Drag a rectangle to pick candidate times (adjacent cells merge into one
+   time range); click a selected cell to deselect it. Set the **timezone**
+   the times are expressed in (defaults to your local zone). The live
+   preview shows exactly what respondents will see.
 5. **Publish survey** and share the generated link
-   (`survey.html?id=...`). It works within seconds.
+   (`survey.html?id=...`). New surveys work within seconds; *edits* to an
+   existing survey can take up to ~5 minutes to reach respondents (GitHub
+   caches definition files server-side). Edits are not live until you
+   click Publish.
 6. Later: **Edit** to change questions, **Open / close** to stop responses.
    Note: changing questions after responses exist can make old answers harder
    to interpret — prefer closing and creating a new survey instead.
 
-## Reading results (R)
+### What respondents see (meeting grids)
+
+- Candidate times appear as highlighted blocks on a week grid, in the
+  respondent's own timezone (selectable; the organizer's zone is noted).
+- **Click a block** to mark the whole window available; **drag** across
+  30-minute cells for partial availability. Availability is binary: any
+  painted time in a window counts as available.
+- Once others have responded, cells are **shaded by popularity** (stronger
+  blue = more people available), with the total respondent count and
+  min/max availability shown above the grid and exact counts on hover.
+  A respondent's green selection keeps the same shading, making overlap
+  with popular windows visible. Only aggregate counts are exposed — never
+  names or individual answers.
+
+## Viewing results
+
+### In the browser (private)
+
+Click **Results** next to a survey in the designer. You get:
+
+- bar charts + counts tables for choice/rating questions (mean for ratings)
+- meeting questions: availability bars, counts table, and a
+  when2meet-style **heatmap** (greener = more overlap, names on hover,
+  timezone-selectable)
+- responses-over-time chart, respondent list
+
+Results are fetched from the private repo with your token, browser-side —
+nothing is ever published. **Share a snapshot** downloads a standalone
+HTML file (charts and tables baked in, no scripts or credentials) with an
+optional anonymize-names checkbox for public sharing.
+
+### In R
 
 ```r
 source("R/fetch_responses.R")   # needs gh + jsonlite; GITHUB_PAT in ~/.Renviron
 df <- fetch_responses("k3f9x2ab")     # one row per respondent
-meeting_tally(df, "q_ab12cd34")       # yes/maybe/no counts per date/time
+meeting_tally(df, "q_ab12cd34")       # available / not available per window
+cell_tally(df, "q_ab12cd34", "k3f9x2ab", tz = "Australia/Perth")
+                                      # 30-min resolution availability counts
 save_responses_csv("k3f9x2ab")        # export CSV
 ```
 
 Update `SURVEY_OWNER` / repo names at the top of the script once.
 Question column names are the question ids from the survey definition
-(`fetch_definition("k3f9x2ab")` shows ids, labels, and slots).
+(`fetch_definition("k3f9x2ab")` shows ids, labels, and slots). Partial
+availability is stored both as the window's binary status and as exact
+30-minute instants under `"<slot> (parts)"` columns.
 
 ## Privacy & duplicate prevention
 
@@ -115,6 +161,25 @@ Question column names are the question ids from the survey definition
   under simultaneous submissions.
 - The Worker rejects submissions from other origins, validates every answer
   against the survey definition, drops unknown fields, and caps body size.
+- The popularity endpoint (`GET /popularity`) returns **only aggregate
+  counts per 30-minute cell** plus the respondent total — no names,
+  answers, or dedup keys — and is origin-checked like submissions.
+
+## Sharing survey creation with a team
+
+The designer page is public; authorization comes from GitHub. To let a
+colleague create surveys:
+
+1. Add them as a **collaborator** on the public repo (and on the private
+   repo too if they should see results — that grants access to *all*
+   responses).
+2. They create their **own** fine-grained PAT (Contents: read & write on
+   the public repo; add read-only on the private repo for results).
+3. They open the designer URL and paste their token — it stays in their
+   browser. Never share your own token.
+
+Anyone with write access can edit/close any survey in the shared list;
+this is a shared workspace, not isolated accounts.
 
 ## Free-tier budget
 
@@ -143,8 +208,12 @@ Cloudflare dashboard whenever it changes.
 docs/            GitHub Pages site
   index.html     survey designer (your token, your browser only)
   survey.html    respondent page (?id=<survey-id>)
-  assets/        vanilla JS + CSS (no build step)
+  results.html   private results viewer (?id=<survey-id>)
+  assets/        vanilla JS + CSS (no build step); boot.js + manifest.json
+                 handle cache-busting
   surveys/       published survey definitions (public, questions only)
 worker/          Cloudflare Worker source (paste into dashboard)
 R/               fetch_responses.R — results -> data frame / CSV
+scripts/         bump_manifest.py — regenerate asset versions before push
+examples/        reference screenshots (not published)
 ```
