@@ -69,7 +69,7 @@ function resolveSlotCells(q, referenceDate) {
 
 // Build the paintable grid in the viewer's chosen timezone.
 // Returns {element, getAnswers()} or null (use table fallback).
-function createRespondentGrid(q, referenceDate, onChange) {
+function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const blocks = resolveSlotCells(q, referenceDate);
   if (!blocks) return null;
   const stepMs = RG_STEP * 60000;
@@ -81,10 +81,14 @@ function createRespondentGrid(q, referenceDate, onChange) {
   const wrap = el("div", {});
   const chosen = new Set(); // instants (ms) the respondent painted
   let viewZone = localZone();
+  // opts.readOnly: designer live preview — same look, no painting.
+  const readOnly = !!opts.readOnly;
 
   const creatorZone = q.tz;
   const hint = el("div", { class: "hint" },
-    "Highlighted cells are the candidate times. Drag a box over the times that work for you; click a selected cell to deselect it.");
+    readOnly
+      ? "Preview: this is what respondents will see and paint."
+      : "Highlighted cells are the candidate times. Drag a box over the times that work for you; click a selected cell to deselect it.");
   const tzSel = zoneSelect(viewZone, (z) => { viewZone = z; buildGrid(); });
   const tzRow = el("div", { class: "row", style: "margin:6px 0" },
     el("label", { class: "tg-ctl" }, "Show times in", tzSel));
@@ -158,7 +162,7 @@ function createRespondentGrid(q, referenceDate, onChange) {
       }
     }
     gridBox.replaceChildren(gridEl);
-    attachPaint();
+    if (!readOnly) attachPaint();
 
     const refInstant = placed.length ? placed[0].ts : Date.now();
     zoneNote.textContent = creatorZone && creatorZone !== viewZone

@@ -122,6 +122,21 @@ GitHub Pages + private repos: free. Cloudflare Workers: 100,000 requests/day
 free — each submission uses ~5 requests, so tens of thousands of responses per
 day. No GitHub Actions minutes are used.
 
+## Deploying frontend changes
+
+Assets are cache-busted via `docs/assets/manifest.json` (loaded by
+`boot.js`). After editing anything under `docs/assets/`, run:
+
+```sh
+python3 scripts/bump_manifest.py
+```
+
+then commit and push. Without this, browsers may serve stale scripts for
+up to 10 minutes (GitHub Pages `max-age=600`).
+
+The Worker is deployed separately: paste `worker/survey-worker.js` into the
+Cloudflare dashboard whenever it changes.
+
 ## Project layout
 
 ```

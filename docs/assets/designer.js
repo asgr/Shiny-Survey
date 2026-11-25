@@ -131,7 +131,10 @@ function drawPreview() {
       el("div", { class: "q-label" }, "Your name", el("span", { class: "required-mark" }, " *")),
       el("input", { type: "text", disabled: "" })));
   }
-  for (const q of survey.questions) nodes.push(renderQuestion(q, idx++));
+  // Show meeting questions exactly as respondents will see them.
+  for (const q of survey.questions) {
+    nodes.push(renderQuestion(q, idx++, { grid: true, readOnly: true, refDate: new Date() }));
+  }
   if (!survey.questions.length) nodes.push(el("p", { class: "hint" }, "Add questions to see a preview."));
   const btn = el("button", { class: "primary", disabled: "", style: "margin-top:12px" }, "Submit");
   nodes.push(btn);
