@@ -75,8 +75,9 @@ and `workerUrl`. Commit and push.
 2. Paste your **designer token** once — it is stored only in your browser.
 3. Set title, anonymity (name field on/off), duplicate prevention, and cap.
 4. Add questions: short/long text, single/multiple choice, 1–5 rating, or a
-   **meeting grid** (one candidate date/time per line; respondents answer
-   yes / no / maybe for each).
+   **meeting grid** — a when2meet-style week grid where you drag across cells
+   to pick candidate times (adjacent cells merge into one time range;
+   respondents answer yes / no / maybe for each).
 5. **Publish survey** and share the generated link
    (`survey.html?id=...`). It works within seconds.
 6. Later: **Edit** to change questions, **Open / close** to stop responses.

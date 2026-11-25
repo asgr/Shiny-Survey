@@ -86,15 +86,12 @@ function questionEditor(q, i) {
   }
 
   if (q.type === "meeting") {
-    const slots = el("textarea", {
-      rows: 4, placeholder: "Mon Dec 7, 10:00–11:00\nTue Dec 8, 14:00–15:00",
-      oninput: (e) => {
-        q.slots = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
-        drawPreview();
-      },
-    });
-    slots.value = (q.slots || []).join("\n");
-    card.append(el("div", { class: "hint", style: "margin-top:8px" }, "Candidate date/times, one per line (respondents mark yes / no / maybe for each):"), slots);
+    card.append(
+      el("div", { class: "hint", style: "margin-top:8px" },
+        "Drag across the grid to pick candidate times (respondents mark yes / no / maybe for each). " +
+        "Adjacent cells merge into one time range."),
+      createTimeGridEditor(q, drawPreview)
+    );
   }
 
   const req = el("input", {
@@ -142,6 +139,10 @@ function drawPreview() {
 }
 
 function redraw() {
+  if (typeof tgActivePaint !== "undefined" && tgActivePaint) {
+    tgActivePaint.abort();
+    tgActivePaint = null;
+  }
   $("questions").replaceChildren(...survey.questions.map(questionEditor));
   drawPreview();
 }

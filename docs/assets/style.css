@@ -99,3 +99,46 @@ table.grid input[type="radio"] { width: auto; }
 code.link { word-break: break-all; font-size: 0.85rem; background: var(--bg); padding: 2px 6px; border-radius: 4px; }
 
 .thanks { text-align: center; padding: 48px 20px; }
+
+/* when2meet-style time grid editor */
+.tg-controls { align-items: flex-end; margin-bottom: 8px; }
+.tg-ctl { font-size: 0.8rem; font-weight: 600; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.tg-ctl input, .tg-ctl select { font-size: 0.85rem; padding: 4px 6px; }
+
+.tg-grid {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* let pointer events paint instead of scrolling */
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tg-corner, .tg-head, .tg-time {
+  background: var(--bg);
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 4px;
+  text-align: center;
+}
+.tg-head { font-weight: 600; color: var(--ink); border-left: 1px solid var(--line); }
+.tg-time { text-align: right; padding-right: 6px; min-height: 22px; }
+.tg-cell {
+  min-height: 22px;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid #eef2f6;
+  background: #fff;
+  cursor: pointer;
+}
+.tg-cell.hour { border-top: 1px solid var(--line); }
+.tg-cell:hover { background: #e8f0fe; }
+.tg-cell.sel { background: #4c8dff; }
+.tg-cell.sel:hover { background: #3b76e0; }
+
+.tg-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 0.85rem;
+}
