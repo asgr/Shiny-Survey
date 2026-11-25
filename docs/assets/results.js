@@ -66,7 +66,18 @@ function choiceSummary(q, responses) {
   }
   const rows = opts.map((o) => [o, counts[o]]);
   if (unanswered) rows.push(["(no answer)", unanswered]);
-  return tallyTable(rows, ["Option", "Count"]);
+  const chartItems = opts.map((o) => ({ label: o, value: counts[o] }));
+  if (unanswered) chartItems.push({ label: "(no answer)", value: unanswered, color: "#9aa7b3" });
+  const total = responses.length || 1;
+  const mean = q.type === "rating"
+    ? responses.reduce((s, r) => s + (Number((r.answers || {})[q.id]) || 0), 0) /
+      Math.max(1, responses.filter((r) => (r.answers || {})[q.id]).length)
+    : null;
+  return el("div", {},
+    mean !== null && !isNaN(mean)
+      ? el("p", { class: "hint" }, `Mean rating: ${mean.toFixed(2)} / 5`) : null,
+    hbarChart(chartItems, { max: total }),
+    tallyTable(rows, ["Option", "Count"]));
 }
 
 function textSummary(q, responses) {
@@ -101,7 +112,24 @@ function meetingSummary(q, responses, survey) {
     return [slot, yes, no, un];
   });
   slotRows.sort((a, b) => b[1] - a[1]);
+  const total = responses.length;
   const box = el("div", {},
+    chartLegend([
+      { name: "available", color: "#22a06b" },
+      { name: "not available", color: "#d5dbe2" },
+      { name: "no answer", color: "#9aa7b3" },
+    ]),
+    stackedBarChart(
+      slotRows.map(([slot, yes, no, un]) => ({
+        label: slot,
+        parts: [
+          { value: yes, color: "#22a06b", name: "available" },
+          { value: no, color: "#d5dbe2", name: "not available" },
+          { value: un, color: "#9aa7b3", name: "no answer" },
+        ],
+      })),
+      { max: total || 1 }
+    ),
     tallyTable(slotRows, ["Time", "Available", "Not available", "No answer"]));
 
   if (!blocks) return box;
@@ -132,7 +160,6 @@ function meetingSummary(q, responses, survey) {
     return box;
   }
 
-  const total = responses.length;
   const stepMs = 30 * 60000;
   let viewZone = localZone();
   const heatBox = el("div", {});
@@ -228,6 +255,8 @@ async function main() {
     if (!responses.length) {
       cards.push(el("div", { class: "card" }, el("p", {}, "No responses yet. Share the survey link!")));
     }
+    const overTime = responsesOverTime(responses);
+    if (overTime) cards.push(el("div", { class: "card" }, overTime));
     survey.questions.forEach((q, i) => {
       const card = el("div", { class: "card" },
         el("h2", {}, `${i + 1}. ${q.label}`));

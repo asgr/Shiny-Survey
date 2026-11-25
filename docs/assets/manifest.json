@@ -1,10 +1,11 @@
 {
+  "charts.js": "a668c53801",
   "common.js": "d5ec9fcc42",
   "config.js": "7e6ca4eba1",
   "designer.js": "fbafaf3225",
   "render.js": "0f2ceef21e",
   "respond-grid.js": "d9b8231337",
-  "results.js": "91cdcd31b9",
+  "results.js": "d739c611db",
   "style.css": "e1b0ffc538",
   "survey.js": "254de44bca",
   "timegrid.js": "d454e134b5",
