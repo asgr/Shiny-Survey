@@ -123,19 +123,21 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       return end.date !== p.date;
     });
 
-    // Global row = dayIndex * rowsPerDay + min / step (crossing midnight
-    // moves into the next day's rows). Window the display around the cells.
-    const cellAt = {}; // "globalRow|col" -> {ts, label}
+    // Rows are TIME-OF-DAY slots shared by all date columns (like when2meet):
+    // row = minuteOfDay / step, column = date. A cell that crosses midnight
+    // in the viewer's zone simply appears late in one day's column and early
+    // in the next day's column at the matching clock times.
+    const cellAt = {}; // "row|col" -> {ts, label}
     let rowMin = Infinity, rowMax = -Infinity;
     for (const p of placed) {
-      const gr = dateIndex[p.date] * rowsPerDay + p.min / RG_STEP;
+      const row = p.min / RG_STEP;
       const col = dateIndex[p.date];
-      cellAt[`${gr}|${col}`] = { ts: p.ts, label: p.label };
-      if (gr < rowMin) rowMin = gr;
-      if (gr + 1 > rowMax) rowMax = gr + 1;
+      cellAt[`${row}|${col}`] = { ts: p.ts, label: p.label };
+      if (row < rowMin) rowMin = row;
+      if (row + 1 > rowMax) rowMax = row + 1;
     }
     rowMin = Math.max(0, rowMin - 1);
-    rowMax = Math.min(dates.length * rowsPerDay, rowMax + 1);
+    rowMax = Math.min(rowsPerDay, rowMax + 1);
 
     layout = { rowMin, rowMax, rowsPerDay, dates, cellAt };
 
@@ -148,7 +150,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
         TG_DAYS[d.getDay()], el("div", {}, `${TG_MONTHS[d.getMonth()]} ${d.getDate()}`)));
     }
     for (let r = rowMin; r < rowMax; r++) {
-      const m = (r % rowsPerDay) * RG_STEP;
+      const m = r * RG_STEP;
       const hour = m % 60 === 0;
       gridEl.append(el("div", { class: "tg-time" }, hour ? tgFmtTime(m) : ""));
       for (let c = 0; c < dates.length; c++) {
@@ -209,13 +211,15 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   function attachPaint() {
     gridEl.addEventListener("pointerdown", (e) => {
       const cell = e.target.closest(".rg-cell");
-      if (!cell || !cell.getAttribute("data-ts")) return;
+      if (!cell) return;
       e.preventDefault();
       dragging = true;
       tgActivePaint = paintState;
       anchor = { row: Number(cell.getAttribute("data-row")), col: Number(cell.getAttribute("data-col")) };
       baseChosen = new Set(chosen);
-      rectMode = !chosen.has(Number(cell.getAttribute("data-ts")));
+      // Blank anchor = select mode; allowed-cell anchor toggles its state.
+      const ts = cell.getAttribute("data-ts");
+      rectMode = ts ? !chosen.has(Number(ts)) : true;
       applyRect(anchor.row, anchor.col); // click = 1x1 rect = toggle
     });
     gridEl.addEventListener("pointermove", (e) => {
