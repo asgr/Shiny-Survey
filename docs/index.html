@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Survey designer</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="wrap wide">
+    <h1>Survey designer</h1>
+    <p class="subtitle">Create a survey, publish it, and share the link. Responses go to your private repo.</p>
+
+    <div class="card">
+      <h2>GitHub access</h2>
+      <p class="hint">
+        A fine-grained token with <strong>Contents: read &amp; write</strong> on this public repo only.
+        It is stored in this browser's localStorage and used only from your machine — respondents never see it.
+      </p>
+      <div class="row">
+        <input type="password" id="gh-token" class="grow" placeholder="github_pat_…">
+        <button id="save-token">Save token</button>
+        <button id="clear-token" class="danger">Clear</button>
+      </div>
+      <div id="token-status" class="status"></div>
+    </div>
+
+    <div class="columns">
+      <div>
+        <div class="card">
+          <div class="spread">
+            <h2>Survey settings</h2>
+            <button id="new-survey" class="small">New survey</button>
+          </div>
+          <label for="s-title">Title</label>
+          <input type="text" id="s-title" placeholder="Team meeting availability">
+          <label for="s-desc" style="margin-top:10px">Description (optional)</label>
+          <textarea id="s-desc" rows="2"></textarea>
+
+          <div class="row" style="margin-top:10px">
+            <div class="grow">
+              <label for="s-name">Collect respondent name?</label>
+              <select id="s-name">
+                <option value="no">No — fully anonymous</option>
+                <option value="yes">Yes — required</option>
+              </select>
+            </div>
+            <div class="grow">
+              <label for="s-dedup">Duplicate prevention</label>
+              <select id="s-dedup">
+                <option value="browser+ip">Browser + IP hash (recommended)</option>
+                <option value="browser">Browser token only</option>
+                <option value="off">Off — allow repeats</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">IP addresses are never stored — only a salted hash. Shared office WiFi can cause false "already submitted" blocks in IP mode.</p>
+
+          <div class="row">
+            <div class="grow">
+              <label for="s-cap">Max responses</label>
+              <input type="number" id="s-cap" value="200" min="1" max="1000">
+            </div>
+            <div class="grow">
+              <label for="s-open">Accepting responses?</label>
+              <select id="s-open">
+                <option value="yes">Open</option>
+                <option value="no">Closed</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="spread">
+            <h2>Questions</h2>
+            <select id="add-type" style="width:auto">
+              <option value="">+ Add question…</option>
+              <option value="text">Short text</option>
+              <option value="longtext">Long text</option>
+              <option value="single">Single choice</option>
+              <option value="multi">Multiple choice</option>
+              <option value="rating">Rating 1–5</option>
+              <option value="meeting">Meeting date/time grid</option>
+            </select>
+          </div>
+          <div id="questions"></div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <button id="publish" class="primary">Publish survey</button>
+            <span id="publish-info" class="hint"></span>
+          </div>
+          <div id="publish-status" class="status"></div>
+          <div id="share" style="display:none; margin-top:10px">
+            <label>Shareable link</label>
+            <code class="link" id="share-link"></code>
+            <button id="copy-link" class="small">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>Live preview</h2>
+          <div id="preview"></div>
+        </div>
+        <div class="card">
+          <div class="spread">
+            <h2>Existing surveys</h2>
+            <button id="refresh-list" class="small">Refresh</button>
+          </div>
+          <div id="survey-list"><p class="hint">Save a token to list surveys.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="assets/config.js"></script>
+  <script src="assets/common.js"></script>
+  <script src="assets/render.js"></script>
+  <script src="assets/designer.js"></script>
+</body>
+</html>
