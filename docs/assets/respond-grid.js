@@ -89,11 +89,13 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const pop = opts.popularity || null;
   const popCounts = pop && pop.counts ? pop.counts : null;
   const popMax = popCounts ? Math.max(1, ...Object.values(popCounts)) : 0;
+  function cellCount(ts) {
+    return popCounts ? (popCounts[new Date(ts).toISOString()] || 0) : 0;
+  }
   function cellAlpha(ts) {
     if (!popCounts) return 1;
-    const n = popCounts[new Date(ts).toISOString()] || 0;
     // faint for least popular, opaque for most; keep a visible floor
-    return 0.15 + 0.85 * (n / popMax);
+    return 0.15 + 0.85 * (cellCount(ts) / popMax);
   }
 
   const creatorZone = q.tz;
@@ -107,10 +109,19 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const zoneNote = el("div", { class: "hint" });
   const popNote = el("div", { class: "hint" });
   if (pop && !readOnly) {
-    popNote.textContent = pop.total === 0
-      ? "No responses yet — you're the first!"
-      : `${pop.total} ${pop.total === 1 ? "person has" : "people have"} responded so far. ` +
-        "Stronger blue = more people available then; your green selection keeps the same shading so you can see the overlap.";
+    if (pop.total === 0) {
+      popNote.textContent = "No responses yet — you're the first!";
+    } else {
+      // Min/max across ALL candidate cells (unpopular cells may be absent
+      // from counts), so the range reflects the whole offered window.
+      const allCounts = blocks.flatMap((b) => b.cells.map(cellCount));
+      const lo = Math.min(...allCounts), hi = Math.max(...allCounts);
+      popNote.textContent =
+        `${pop.total} ${pop.total === 1 ? "person has" : "people have"} responded so far. ` +
+        `Availability across the offered times ranges from ${lo} to ${hi} ` +
+        `${hi === 1 ? "person" : "people"} per 30-min window. ` +
+        "Stronger blue = more people available then; your green selection keeps the same shading so you can see the overlap. Hover a cell for its exact count.";
+    }
   }
   const gridBox = el("div", {});
   const summary = el("div", { class: "hint" });
@@ -214,6 +225,9 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
                  (hit ? " allowed" : "") + (hit && chosen.has(hit.ts) ? " chosen" : ""),
           "data-ts": hit ? String(hit.ts) : null,
           "data-row": String(r), "data-col": String(c),
+          title: hit && popCounts && !readOnly
+            ? `${cellCount(hit.ts)} of ${pop.total} available ${tgFmtTime(m)}\u2013${tgFmtTime(m + RG_STEP)}`
+            : null,
         });
         if (hit && popCounts) {
           // Inline background overrides the .allowed/.chosen CSS; both
