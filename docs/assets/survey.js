@@ -41,13 +41,21 @@ function collectAnswers(survey, form) {
       answers[q.id] = vals;
       if (q.required && vals.length === 0) missing.push(q.label);
     } else if (q.type === "meeting") {
-      const grid = {};
-      (q.slots || []).forEach((slot, i) => {
-        const checked = form.querySelector(`input[name="${name}__${i}"]:checked`);
-        grid[slot] = checked ? checked.value : null;
-      });
-      answers[q.id] = grid;
-      if (q.required && Object.values(grid).some((v) => v === null)) missing.push(q.label);
+      const box = form.querySelector(`.question[data-qid="${q.id}"]`);
+      if (box && box._respondGrid) {
+        // Painted grid: unpainted blocks mean "not available".
+        const grid = box._respondGrid.getAnswers();
+        answers[q.id] = grid;
+        if (q.required && !Object.values(grid).includes("yes")) missing.push(q.label);
+      } else {
+        const grid = {};
+        (q.slots || []).forEach((slot, i) => {
+          const checked = form.querySelector(`input[name="${name}__${i}"]:checked`);
+          grid[slot] = checked ? checked.value : null;
+        });
+        answers[q.id] = grid;
+        if (q.required && Object.values(grid).some((v) => v === null)) missing.push(q.label);
+      }
     }
   }
   return { answers, missing };
@@ -69,7 +77,10 @@ function renderSurvey(survey, id) {
       )
     );
   }
-  survey.questions.forEach((q, i) => card.append(renderQuestion(q, i)));
+  const refDate = survey.createdAt ? new Date(survey.createdAt) : new Date();
+  survey.questions.forEach((q, i) =>
+    card.append(renderQuestion(q, i, { grid: true, refDate }))
+  );
   form.append(card);
 
   const status = el("div", { class: "status" });

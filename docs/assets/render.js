@@ -1,7 +1,9 @@
 // Question rendering shared by the respondent page and the designer preview.
 "use strict";
 
-function renderQuestion(q, index) {
+// opts.grid: render meeting questions as a paintable availability grid
+// (respondent page); the designer preview keeps the simple table.
+function renderQuestion(q, index, opts = {}) {
   const name = `q_${q.id}`;
   const label = el(
     "div", { class: "q-label" },
@@ -32,6 +34,15 @@ function renderQuestion(q, index) {
     }
     box.append(row, el("div", { class: "hint" }, "1 = lowest, 5 = highest"));
   } else if (q.type === "meeting") {
+    if (opts.grid && typeof createRespondentGrid === "function") {
+      const rg = createRespondentGrid(q, opts.refDate);
+      if (rg) {
+        box.append(rg.element);
+        box._respondGrid = rg;
+        return box;
+      }
+      // Unparseable (hand-typed) slots: fall through to the table.
+    }
     const table = el("table", { class: "grid" });
     const cols = q.choices || ["yes", "no", "maybe"];
     table.append(

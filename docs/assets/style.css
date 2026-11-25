@@ -137,6 +137,13 @@ code.link { word-break: break-all; font-size: 0.85rem; background: var(--bg); pa
 .tg-cell.sel { background: #4c8dff; }
 .tg-cell.sel:hover { background: #3b76e0; }
 
+/* respondent availability grid: allowed = candidate, chosen = works for me */
+.rg-cell { cursor: default; }
+.rg-cell.allowed { background: #dbe7ff; cursor: pointer; }
+.rg-cell.allowed:hover { background: #c3d6ff; }
+.rg-cell.chosen { background: #22a06b; }
+.rg-cell.chosen:hover { background: #1b8a5a; }
+
 .tg-chip {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--bg); border: 1px solid var(--line);
