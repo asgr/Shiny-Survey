@@ -62,7 +62,21 @@ function collectAnswers(survey, form) {
   return { answers, missing };
 }
 
-function renderSurvey(survey, id) {
+// Aggregate popularity per meeting question (no names/answers). Best-effort:
+// if the endpoint is unavailable the grid just renders unshaded.
+async function fetchPopularity(id, survey) {
+  if (!survey.questions.some((q) => q.type === "meeting")) return {};
+  try {
+    const res = await fetch(`${CFG.workerUrl}/popularity?surveyId=${encodeURIComponent(id)}`);
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data && data.counts ? data : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function renderSurvey(survey, id, popularity) {
   document.title = survey.title || "Survey";
   const form = el("form", { novalidate: true });
   const card = el("div", { class: "card" },
@@ -80,7 +94,12 @@ function renderSurvey(survey, id) {
   }
   const refDate = survey.createdAt ? new Date(survey.createdAt) : new Date();
   survey.questions.forEach((q, i) =>
-    card.append(renderQuestion(q, i, { grid: true, refDate }))
+    card.append(renderQuestion(q, i, {
+      grid: true, refDate,
+      popularity: popularity && popularity.counts && popularity.counts[q.id]
+        ? { total: popularity.total, counts: popularity.counts[q.id] }
+        : null,
+    }))
   );
   form.append(card);
 
@@ -149,7 +168,8 @@ function renderSurvey(survey, id) {
       showMessage("Survey closed", "This survey is no longer accepting responses.");
       return;
     }
-    renderSurvey(survey, id);
+    const popularity = await fetchPopularity(id, survey);
+    renderSurvey(survey, id, popularity);
   } catch (err) {
     showMessage("Could not load survey", `Something went wrong (${err.message}). Please try again later.`);
   }

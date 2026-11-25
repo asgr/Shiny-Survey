@@ -41,6 +41,20 @@ export default {
       return json({ ok: true, service: "survey-worker" }, 200, cors);
     }
 
+    // Aggregate-only popularity for the respondent grid's shading.
+    // Returns counts per 30-min cell — never names, answers, or ids.
+    if (request.method === "GET" && url.pathname === "/popularity") {
+      if (origin !== "*" && request.headers.get("Origin") !== origin) {
+        return json({ error: "Forbidden origin" }, 403, cors);
+      }
+      try {
+        return await handlePopularity(url, env, cors);
+      } catch (err) {
+        console.error("popularity failed:", err && err.message);
+        return json({ error: "Unavailable" }, 500, cors);
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/submit") {
       if (origin !== "*" && request.headers.get("Origin") !== origin) {
         return json({ error: "Forbidden origin" }, 403, cors);
@@ -70,6 +84,13 @@ function utf8ToBase64(str) {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
+}
+
+function base64ToUtf8(b64) {
+  const bin = atob(b64.replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 async function sha256Hex(str) {
@@ -174,6 +195,92 @@ function ghHeaders(env) {
 
 function contentsUrl(env, path) {
   return `${GH_API}/repos/${env.GH_OWNER}/${env.PRIVATE_REPO}/contents/${path}`;
+}
+
+// Cache aggregate counts briefly so a burst of respondents doesn't hammer
+// the GitHub API (each call reads every response file for the survey).
+const popularityCache = new Map(); // surveyId -> {data, fetchedAt}
+const POPULARITY_TTL_MS = 60 * 1000;
+
+async function handlePopularity(url, env, cors) {
+  const surveyId = String(url.searchParams.get("surveyId") || "");
+  if (!/^[a-zA-Z0-9_-]{4,40}$/.test(surveyId)) return json({ error: "Invalid survey id" }, 400, cors);
+
+  const cached = popularityCache.get(surveyId);
+  if (cached && Date.now() - cached.fetchedAt < POPULARITY_TTL_MS) {
+    return json(cached.data, 200, cors);
+  }
+
+  const survey = await getDefinition(env, surveyId);
+  if (!survey) return json({ error: "Survey not found" }, 404, cors);
+
+  // Collect the meeting questions' cell universes (ISO instant -> count).
+  const meetingQs = (survey.questions || []).filter((q) => q.type === "meeting");
+  const counts = {}; // qid -> {iso: n}
+  const universe = {}; // qid -> Set of valid ISO cells
+  for (const q of meetingQs) {
+    counts[q.id] = {};
+    universe[q.id] = new Set();
+    for (const slot of q.slots || []) {
+      const cells = q.slotCells && q.slotCells[slot];
+      if (Array.isArray(cells)) {
+        for (const c of cells) universe[q.id].add(new Date(Date.parse(c)).toISOString());
+      } else if (q.slotTimes && q.slotTimes[slot]) {
+        const s = Date.parse(q.slotTimes[slot].start), e = Date.parse(q.slotTimes[slot].end);
+        if (!isNaN(s) && !isNaN(e)) {
+          for (let ts = s; ts < e; ts += 30 * 60000) universe[q.id].add(new Date(ts).toISOString());
+        }
+      }
+    }
+  }
+
+  const dir = `responses/${surveyId}`;
+  const listing = await fetch(contentsUrl(env, dir), { headers: ghHeaders(env) });
+  let total = 0;
+  if (listing.ok) {
+    const files = (await listing.json()).filter((f) => f.type === "file" && !f.name.startsWith("ip-"));
+    for (const f of files) {
+      // Directory listings may omit `path`; construct it from the name.
+      const filePath = f.path || `${dir}/${f.name}`;
+      const item = await fetch(contentsUrl(env, filePath), { headers: ghHeaders(env) });
+      if (!item.ok) continue;
+      const meta = await item.json();
+      let rec;
+      try { rec = JSON.parse(base64ToUtf8(meta.content || "")); } catch { continue; }
+      total++;
+      for (const q of meetingQs) {
+        const a = (rec.answers || {})[q.id] || {};
+        for (const slot of q.slots || []) {
+          const parts = a[`${slot} (parts)`];
+          let instants = null;
+          if (Array.isArray(parts) && parts.length) instants = parts;
+          else if (a[slot] === "yes" || a[slot] === "maybe") {
+            instants = [...universe[q.id]].filter((iso) => {
+              // full-block answer: count only this slot's cells
+              const cells = q.slotCells && q.slotCells[slot];
+              if (Array.isArray(cells)) return cells.some((c) => new Date(Date.parse(c)).toISOString() === iso);
+              const t = q.slotTimes && q.slotTimes[slot];
+              if (!t) return false;
+              const ts = Date.parse(iso);
+              return ts >= Date.parse(t.start) && ts < Date.parse(t.end);
+            });
+          }
+          if (!instants) continue;
+          for (const p of instants) {
+            const iso = new Date(Date.parse(p)).toISOString();
+            if (!universe[q.id].has(iso)) continue;
+            counts[q.id][iso] = (counts[q.id][iso] || 0) + 1;
+          }
+        }
+      }
+    }
+  } else if (listing.status !== 404) {
+    throw new Error(`listing ${listing.status}`);
+  }
+
+  const data = { total, counts };
+  popularityCache.set(surveyId, { data, fetchedAt: Date.now() });
+  return json(data, 200, cors);
 }
 
 async function handleSubmit(request, env, cors) {
@@ -282,5 +389,6 @@ async function handleSubmit(request, env, cors) {
     }
   }
 
+  popularityCache.delete(surveyId);
   return json({ ok: true }, 200, cors);
 }

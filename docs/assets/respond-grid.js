@@ -84,6 +84,17 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   let viewZone = localZone();
   // opts.readOnly: designer live preview — same look, no painting.
   const readOnly = !!opts.readOnly;
+  // opts.popularity: {total, counts: {iso: n}} — shade allowed cells by
+  // how many current respondents are available then (aggregate only).
+  const pop = opts.popularity || null;
+  const popCounts = pop && pop.counts ? pop.counts : null;
+  const popMax = popCounts ? Math.max(1, ...Object.values(popCounts)) : 0;
+  function cellAlpha(ts) {
+    if (!popCounts) return 1;
+    const n = popCounts[new Date(ts).toISOString()] || 0;
+    // faint for least popular, opaque for most; keep a visible floor
+    return 0.15 + 0.85 * (n / popMax);
+  }
 
   const creatorZone = q.tz;
   const hint = el("div", { class: "hint" },
@@ -94,6 +105,13 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const tzRow = el("div", { class: "row", style: "margin:6px 0" },
     el("label", { class: "tg-ctl" }, "Show times in", tzSel));
   const zoneNote = el("div", { class: "hint" });
+  const popNote = el("div", { class: "hint" });
+  if (pop && !readOnly) {
+    popNote.textContent = pop.total === 0
+      ? "No responses yet — you're the first!"
+      : `${pop.total} ${pop.total === 1 ? "person has" : "people have"} responded so far. ` +
+        "Stronger blue = more people available then; your green selection keeps the same shading so you can see the overlap.";
+  }
   const gridBox = el("div", {});
   const summary = el("div", { class: "hint" });
 
@@ -114,6 +132,18 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
     abort: () => { dragging = false; },
   };
 
+  // Apply chosen/unchoosen look to one cell, keeping popularity alpha.
+  function paintCellLook(cell, ts) {
+    if (chosen.has(ts)) cell.classList.add("chosen");
+    else cell.classList.remove("chosen");
+    if (popCounts) {
+      const a = cellAlpha(ts);
+      cell.style.background = chosen.has(ts)
+        ? `rgba(34, 160, 107, ${a})`
+        : `rgba(76, 141, 255, ${a})`;
+    }
+  }
+
   // Click (no drag) toggles the WHOLE candidate block: the common case is
   // "this session works / doesn't". Dragging paints exact 30-min cells.
   function toggleBlock(label) {
@@ -127,8 +157,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       if (!cell.getAttribute || !cell.getAttribute("data-ts")) continue;
       const ts = Number(cell.getAttribute("data-ts"));
       if (!b.cells.includes(ts)) continue;
-      if (chosen.has(ts)) cell.classList.add("chosen");
-      else cell.classList.remove("chosen");
+      paintCellLook(cell, ts);
     }
   }
 
@@ -180,12 +209,21 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       gridEl.append(el("div", { class: "tg-time" }, hour ? tgFmtTime(m) : ""));
       for (let c = 0; c < dates.length; c++) {
         const hit = cellAt[`${r}|${c}`];
-        gridEl.append(el("div", {
+        const cell = el("div", {
           class: "tg-cell rg-cell" + (hour ? " hour" : "") +
                  (hit ? " allowed" : "") + (hit && chosen.has(hit.ts) ? " chosen" : ""),
           "data-ts": hit ? String(hit.ts) : null,
           "data-row": String(r), "data-col": String(c),
-        }));
+        });
+        if (hit && popCounts) {
+          // Inline background overrides the .allowed/.chosen CSS; both
+          // states share the popularity alpha so overlap stays visible.
+          const a = cellAlpha(hit.ts);
+          cell.style.background = chosen.has(hit.ts)
+            ? `rgba(34, 160, 107, ${a})`
+            : `rgba(76, 141, 255, ${a})`;
+        }
+        gridEl.append(cell);
       }
     }
     gridBox.replaceChildren(gridEl);
@@ -230,8 +268,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       if (cr >= r0 && cr <= r1 && cc >= c0 && cc <= c1) {
         if (rectMode) chosen.add(ts); else chosen.delete(ts);
       }
-      if (chosen.has(ts)) cell.classList.add("chosen");
-      else cell.classList.remove("chosen");
+      paintCellLook(cell, ts);
     }
   }
 
@@ -272,7 +309,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
     });
   }
 
-  wrap.append(hint, tzRow, zoneNote, gridBox, summary);
+  wrap.append(hint, tzRow, zoneNote, popNote, gridBox, summary);
   buildGrid();
   return {
     element: wrap,

@@ -35,7 +35,10 @@ function renderQuestion(q, index, opts = {}) {
     box.append(row, el("div", { class: "hint" }, "1 = lowest, 5 = highest"));
   } else if (q.type === "meeting") {
     if (opts.grid && typeof createRespondentGrid === "function") {
-      const rg = createRespondentGrid(q, opts.refDate, null, { readOnly: !!opts.readOnly });
+      const rg = createRespondentGrid(q, opts.refDate, null, {
+        readOnly: !!opts.readOnly,
+        popularity: opts.popularity || null,
+      });
       if (rg) {
         box.append(rg.element);
         box._respondGrid = rg;
