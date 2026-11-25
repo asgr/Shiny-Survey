@@ -73,6 +73,18 @@ function questionEditor(q, i) {
   });
   card.append(el("div", { style: "margin-top:8px" }, labelInput));
 
+  if (q.type === "text" || q.type === "longtext") {
+    if (!q.maxChars) q.maxChars = q.type === "text" ? 140 : 5000;
+    const lim = el("input", {
+      type: "number", min: 1, max: 5000, value: q.maxChars, style: "width:100px",
+      oninput: (e) => {
+        q.maxChars = Math.max(1, Math.min(5000, Number(e.target.value) || (q.type === "text" ? 140 : 5000)));
+        drawPreview();
+      },
+    });
+    card.append(el("label", { class: "tg-ctl", style: "margin-top:8px" }, "Character limit (max 5000)", lim));
+  }
+
   if (q.type === "single" || q.type === "multi") {
     const opts = el("textarea", {
       rows: 4, placeholder: "One option per line",
@@ -113,6 +125,8 @@ function moveQuestion(i, delta) {
 function addQuestion(type) {
   // Random id (not positional) so reordering never collides with stored answers.
   const q = { id: `q_${newSurveyId()}`, type, label: "", required: false };
+  if (type === "text") q.maxChars = 140;
+  if (type === "longtext") q.maxChars = 5000;
   if (type === "single" || type === "multi") q.options = [];
   if (type === "meeting") { q.slots = []; q.choices = ["yes", "no"]; }
   survey.questions.push(q);

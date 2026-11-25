@@ -13,10 +13,18 @@ function renderQuestion(q, index, opts = {}) {
   const box = el("div", { class: "question", "data-qid": q.id });
   box.append(label);
 
-  if (q.type === "text") {
-    box.append(el("input", { type: "text", name }));
-  } else if (q.type === "longtext") {
-    box.append(el("textarea", { name, rows: 4 }));
+  if (q.type === "text" || q.type === "longtext") {
+    const max = q.maxChars || (q.type === "text" ? 140 : 5000);
+    const input = q.type === "text"
+      ? el("input", { type: "text", name, maxlength: max })
+      : el("textarea", { name, rows: 4, maxlength: max });
+    const counter = el("div", { class: "hint" }, `0 / ${max} characters`);
+    input.addEventListener("input", () => {
+      const n = input.value.length;
+      counter.textContent = `${n} / ${max} characters`;
+      counter.style.color = n >= max ? "var(--danger)" : "";
+    });
+    box.append(input, counter);
   } else if (q.type === "single" || q.type === "multi") {
     const inputType = q.type === "single" ? "radio" : "checkbox";
     for (const opt of q.options || []) {

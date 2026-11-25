@@ -128,7 +128,9 @@ function validateAnswers(survey, raw) {
 
     if (q.type === "text" || q.type === "longtext") {
       if (empty) { answers[q.id] = ""; continue; }
-      if (typeof v !== "string" || v.length > 5000) return { error: "Invalid text answer" };
+      // Per-question limit (designer-set); hard ceiling 5000 regardless.
+      const maxChars = Math.min(5000, Number(q.maxChars) || (q.type === "text" ? 140 : 5000));
+      if (typeof v !== "string" || v.length > maxChars) return { error: "Text answer too long" };
       answers[q.id] = v;
     } else if (q.type === "single" || q.type === "rating") {
       if (empty) { answers[q.id] = null; continue; }
