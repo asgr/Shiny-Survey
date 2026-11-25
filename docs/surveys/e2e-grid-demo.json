@@ -1,0 +1,27 @@
+{
+  "id": "e2e-grid-demo",
+  "title": "Grid editor demo — project meeting",
+  "description": "Testing the drag-to-paint meeting grid end to end.",
+  "collectName": true,
+  "dedup": "browser+ip",
+  "maxResponses": 200,
+  "open": true,
+  "createdAt": "2026-11-25T08:10:13.079Z",
+  "questions": [
+    {
+      "id": "q_gridtest",
+      "type": "meeting",
+      "label": "When can we meet?",
+      "required": true,
+      "slots": [
+        "Mon Dec 7, 10:00–11:30",
+        "Wed Dec 9, 09:00–10:00"
+      ],
+      "choices": [
+        "yes",
+        "no",
+        "maybe"
+      ]
+    }
+  ]
+}
