@@ -1,0 +1,27 @@
+{
+  "id": "cb7f057e",
+  "title": "Test",
+  "description": "When should we meet",
+  "collectName": true,
+  "dedup": "browser+ip",
+  "maxResponses": 200,
+  "open": true,
+  "createdAt": "2026-11-25T07:59:31.732Z",
+  "questions": [
+    {
+      "id": "q_cc481ebf",
+      "type": "meeting",
+      "label": "When is good to meet to talk about X?",
+      "required": true,
+      "slots": [
+        "Mon 25th Nov 10-11",
+        "Tues 26th Nov 11-12"
+      ],
+      "choices": [
+        "yes",
+        "no",
+        "maybe"
+      ]
+    }
+  ]
+}
