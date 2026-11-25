@@ -227,6 +227,78 @@ function meetingSummary(q, responses, survey) {
 
 // ---------- page ----------
 
+// ---------- static export ----------
+
+// Rebuild the summary cards from (optionally anonymized) data, inline the
+// stylesheet, and download as one self-contained HTML file. No scripts and
+// no credentials are included; the file cannot fetch anything.
+async function exportSnapshot(survey, responses, id, anonymize, btn) {
+  btn.disabled = true;
+  try {
+    let rs = responses;
+    if (anonymize) {
+      rs = responses.map((r, i) => ({ ...r, name: r.name ? `Respondent ${i + 1}` : null }));
+    }
+    const cards = [];
+    cards.push(el("div", { class: "card" },
+      el("h1", {}, `Results: ${survey.title}`),
+      el("p", { class: "subtitle" },
+        `${rs.length} response${rs.length === 1 ? "" : "s"} · snapshot taken ${new Date().toLocaleString()}` +
+        (anonymize ? " · names anonymized" : ""))));
+    const overTime = responsesOverTime(rs);
+    if (overTime) cards.push(el("div", { class: "card" }, overTime));
+    survey.questions.forEach((q, i) => {
+      const card = el("div", { class: "card" }, el("h2", {}, `${i + 1}. ${q.label}`));
+      if (q.type === "meeting") card.append(meetingSummary(q, rs, survey));
+      else if (q.type === "text" || q.type === "longtext") card.append(textSummary(q, rs));
+      else card.append(choiceSummary(q, rs));
+      cards.push(card);
+    });
+    if (rs.some((r) => r.name)) {
+      cards.push(el("div", { class: "card" },
+        el("h2", {}, "Respondents"),
+        tallyTable(rs.map((r) => [r.name || "(anonymous)", new Date(r.submittedAt).toLocaleString()]),
+          ["Name", "Submitted"])));
+    }
+
+    const holder = el("div", { class: "wrap wide" }, cards);
+    // Inline the current stylesheet so the file stands alone.
+    let css = "";
+    try {
+      const cssRes = await fetch(`assets/style.css?v=${Date.now()}`, { cache: "no-store" });
+      if (cssRes.ok) css = await cssRes.text();
+    } catch (e) { /* fall back to minimal inline styles below */ }
+
+    const title = `Results — ${survey.title}`;
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>${css || "body{font-family:sans-serif;margin:24px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px}"}</style>
+</head>
+<body>
+${holder.outerHTML}
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${id}-results${anonymize ? "-anon" : ""}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 async function main() {
   const id = new URLSearchParams(location.search).get("id");
   if (!id || !/^[a-zA-Z0-9_-]{4,40}$/.test(id)) return showMessage("Invalid link", "No survey id given.");
@@ -276,6 +348,22 @@ async function main() {
         el("h2", {}, "Respondents"),
         tallyTable(rows, ["Name", "Submitted (your local time)"])));
     }
+
+    // Export: self-contained static snapshot for sharing.
+    const anonCheck = el("input", { type: "checkbox", checked: "" });
+    const exportCard = el("div", { class: "card" },
+      el("h2", {}, "Share a snapshot"),
+      el("p", { class: "hint" },
+        "Downloads a standalone HTML file with the charts and tables baked in — " +
+        "no token, no live data, safe to share or host publicly. " +
+        "It is a snapshot: it will not update as new responses arrive."),
+      el("label", { class: "option" }, anonCheck,
+        "Anonymize names (recommended for public sharing)"),
+      el("button", {
+        class: "primary",
+        onclick: (e) => exportSnapshot(survey, responses, id, anonCheck.checked, e.target),
+      }, "Download snapshot HTML"));
+    cards.push(exportCard);
     content.replaceChildren(...cards);
   } catch (err) {
     showMessage("Could not load results",
