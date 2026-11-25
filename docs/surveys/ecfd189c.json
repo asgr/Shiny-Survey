@@ -2,7 +2,7 @@
   "id": "ecfd189c",
   "title": "Sabine Meeting",
   "description": "",
-  "collectName": false,
+  "collectName": true,
   "dedup": "browser+ip",
   "maxResponses": 200,
   "open": true,
