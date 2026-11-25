@@ -137,6 +137,8 @@ code.link { word-break: break-all; font-size: 0.85rem; background: var(--bg); pa
 .tg-cell.sel { background: #4c8dff; }
 .tg-cell.sel:hover { background: #3b76e0; }
 
+.rg-grid { max-height: 70vh; overflow-y: auto; }
+
 /* respondent availability grid: allowed = candidate, chosen = works for me */
 .rg-cell { cursor: default; }
 .rg-cell.allowed { background: #dbe7ff; cursor: pointer; }

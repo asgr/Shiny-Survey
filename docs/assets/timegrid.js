@@ -29,25 +29,30 @@ function tgSlotLabel(dateISO, startMin, endMin) {
          `${tgFmtTime(startMin)}\u2013${tgFmtTime(endMin)}`;
 }
 
-// Merge consecutive painted cells (per date) into contiguous time ranges.
-function gridSlotsFromSelection(grid) {
+// Merge consecutive painted cells (per date) into contiguous runs:
+// [{date, start, end, label}] in chronological order.
+function gridRunsFromSelection(grid) {
   const byDate = {};
   for (const key of grid.selected || []) {
     const [date, m] = key.split("|");
     (byDate[date] = byDate[date] || []).push(Number(m));
   }
-  const slots = [];
+  const runs = [];
   for (const date of Object.keys(byDate).sort()) {
     const mins = [...new Set(byDate[date])].sort((a, b) => a - b);
     let start = mins[0], prev = mins[0];
     for (let i = 1; i <= mins.length; i++) {
       const m = mins[i];
       if (m !== undefined && m === prev + grid.step) { prev = m; continue; }
-      slots.push(tgSlotLabel(date, start, prev + grid.step));
+      runs.push({ date, start, end: prev + grid.step, label: tgSlotLabel(date, start, prev + grid.step) });
       if (m !== undefined) { start = m; prev = m; }
     }
   }
-  return slots;
+  return runs;
+}
+
+function gridSlotsFromSelection(grid) {
+  return gridRunsFromSelection(grid).map((r) => r.label);
 }
 
 // One global pointerup dispatcher; the editor being painted registers itself.
@@ -70,6 +75,7 @@ function defaultGrid() {
     startMin: 9 * 60,
     endMin: 17 * 60,
     step: 30,
+    tz: localZone(),
     selected: [],
   };
 }
@@ -83,6 +89,7 @@ function createTimeGridEditor(q, onChange) {
     q.grid = defaultGrid();
   }
   const grid = q.grid;
+  if (!grid.tz) grid.tz = q.tz || localZone();
   const sel = new Set(grid.selected || []);
 
   const wrap = el("div", { style: "margin-top:8px" });
@@ -96,6 +103,19 @@ function createTimeGridEditor(q, onChange) {
     const custom = q.customSlots || [];
     q.slots = [...new Set([...custom, ...generated])];
     if (custom.length === 0) delete q.customSlots;
+    // Unambiguous UTC instants for generated slots, keyed by label. Labels
+    // stay the canonical answer keys; slotTimes lets respondents convert
+    // to their own timezone. Custom (hand-typed) slots have no entry.
+    q.tz = grid.tz;
+    const times = {};
+    for (const r of gridRunsFromSelection(grid)) {
+      times[r.label] = {
+        start: new Date(zonedWallToUtc(r.date, r.start, grid.tz)).toISOString(),
+        end: new Date(zonedWallToUtc(r.date, r.end, grid.tz)).toISOString(),
+      };
+    }
+    if (Object.keys(times).length) q.slotTimes = times;
+    else delete q.slotTimes;
     info.textContent = q.slots.length
       ? `${q.slots.length} time slot(s): ${q.slots.join(" \u00b7 ")}`
       : "Drag across the grid to select candidate times. Drag over selected cells to erase.";
@@ -165,6 +185,10 @@ function createTimeGridEditor(q, onChange) {
     c.addEventListener("change", controlsChanged)
   );
 
+  // Timezone applies to the wall-clock times in the grid; changing it keeps
+  // the painted cells but reinterprets them in the new zone.
+  const tzSel = zoneSelect(grid.tz, (z) => { grid.tz = z; syncSlots(); });
+
   wrap.append(
     el("div", { class: "row tg-controls" },
       el("label", { class: "tg-ctl" }, "From date", dateInput),
@@ -172,6 +196,7 @@ function createTimeGridEditor(q, onChange) {
       el("label", { class: "tg-ctl" }, "Start", startSel),
       el("label", { class: "tg-ctl" }, "End", endSel),
       el("label", { class: "tg-ctl" }, "Step", stepSel),
+      el("label", { class: "tg-ctl" }, "Timezone", tzSel),
       el("button", {
         class: "small", type: "button",
         onclick: () => { sel.clear(); buildGrid(); syncSlots(); },
