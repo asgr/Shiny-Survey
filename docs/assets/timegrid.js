@@ -1,11 +1,14 @@
 // when2meet-style drag-to-paint grid for choosing candidate meeting times.
-// The grid is only an editor: the canonical output is q.slots (string list),
-// so the respondent page, Worker, and R reader are unchanged.
+// Cells are fixed 30-minute windows. Dragging selects the rectangular bounds
+// between drag start and current pointer; a single click toggles one cell.
+// Canonical output: q.slots (labels, answer keys) + q.slotCells (label ->
+// UTC instants per 30-min cell) so respondents can paint cell-level overlap.
 "use strict";
 
 const TG_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TG_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const TG_STEP = 30; // minutes; harmonized on organizer and respondent sides
 
 function tgDateISO(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -32,6 +35,7 @@ function tgSlotLabel(dateISO, startMin, endMin) {
 // Merge consecutive painted cells (per date) into contiguous runs:
 // [{date, start, end, label}] in chronological order.
 function gridRunsFromSelection(grid) {
+  const step = grid.step || TG_STEP;
   const byDate = {};
   for (const key of grid.selected || []) {
     const [date, m] = key.split("|");
@@ -43,8 +47,8 @@ function gridRunsFromSelection(grid) {
     let start = mins[0], prev = mins[0];
     for (let i = 1; i <= mins.length; i++) {
       const m = mins[i];
-      if (m !== undefined && m === prev + grid.step) { prev = m; continue; }
-      runs.push({ date, start, end: prev + grid.step, label: tgSlotLabel(date, start, prev + grid.step) });
+      if (m !== undefined && m === prev + step) { prev = m; continue; }
+      runs.push({ date, start, end: prev + step, label: tgSlotLabel(date, start, prev + step) });
       if (m !== undefined) { start = m; prev = m; }
     }
   }
@@ -74,7 +78,7 @@ function defaultGrid() {
     days: 5,
     startMin: 9 * 60,
     endMin: 17 * 60,
-    step: 30,
+    step: TG_STEP,
     tz: localZone(),
     selected: [],
   };
@@ -90,6 +94,16 @@ function createTimeGridEditor(q, onChange) {
   }
   const grid = q.grid;
   if (!grid.tz) grid.tz = q.tz || localZone();
+  // Harmonize any legacy 15/60-min grids to 30-minute windows.
+  if (grid.step !== TG_STEP) {
+    const snapped = new Set();
+    for (const key of grid.selected || []) {
+      const [date, m] = key.split("|");
+      snapped.add(`${date}|${Math.floor(Number(m) / TG_STEP) * TG_STEP}`);
+    }
+    grid.selected = [...snapped];
+    grid.step = TG_STEP;
+  }
   const sel = new Set(grid.selected || []);
 
   const wrap = el("div", { style: "margin-top:8px" });
@@ -99,16 +113,27 @@ function createTimeGridEditor(q, onChange) {
 
   function syncSlots() {
     grid.selected = [...sel];
-    const generated = gridSlotsFromSelection(grid);
+    const runs = gridRunsFromSelection(grid);
+    const generated = runs.map((r) => r.label);
     const custom = q.customSlots || [];
     q.slots = [...new Set([...custom, ...generated])];
     if (custom.length === 0) delete q.customSlots;
-    // Unambiguous UTC instants for generated slots, keyed by label. Labels
-    // stay the canonical answer keys; slotTimes lets respondents convert
-    // to their own timezone. Custom (hand-typed) slots have no entry.
+    // Labels stay the answer keys; slotCells gives the UTC instant of every
+    // 30-min cell so respondents can select partial blocks.
     q.tz = grid.tz;
+    const cells = {};
+    for (const r of runs) {
+      const arr = [];
+      for (let m = r.start; m < r.end; m += TG_STEP) {
+        arr.push(new Date(zonedWallToUtc(r.date, m, grid.tz)).toISOString());
+      }
+      cells[r.label] = arr;
+    }
+    if (Object.keys(cells).length) q.slotCells = cells;
+    else delete q.slotCells;
+    // Back-compat for respondents on older cached pages.
     const times = {};
-    for (const r of gridRunsFromSelection(grid)) {
+    for (const r of runs) {
       times[r.label] = {
         start: new Date(zonedWallToUtc(r.date, r.start, grid.tz)).toISOString(),
         end: new Date(zonedWallToUtc(r.date, r.end, grid.tz)).toISOString(),
@@ -118,7 +143,7 @@ function createTimeGridEditor(q, onChange) {
     else delete q.slotTimes;
     info.textContent = q.slots.length
       ? `${q.slots.length} time slot(s): ${q.slots.join(" \u00b7 ")}`
-      : "Drag across the grid to select candidate times. Drag over selected cells to erase.";
+      : "Drag across the grid to select candidate times. Click a selected cell to deselect it.";
     drawChips();
     onChange();
   }
@@ -138,24 +163,17 @@ function createTimeGridEditor(q, onChange) {
   // --- controls ---
   const dateInput = el("input", { type: "date", value: grid.startDate });
   const daysInput = el("input", { type: "number", min: 1, max: 14, value: grid.days, style: "width:70px" });
-  const hourOpts = (selected) => {
+  const halfHourOpts = (selected) => {
     const opts = [];
-    for (let h = 0; h <= 24; h++) {
-      const o = el("option", { value: String(h * 60) }, tgFmtTime(h * 60));
-      if (h * 60 === selected) o.setAttribute("selected", "");
+    for (let m = 0; m <= 24 * 60; m += TG_STEP) {
+      const o = el("option", { value: String(m) }, tgFmtTime(m));
+      if (m === selected) o.setAttribute("selected", "");
       opts.push(o);
     }
     return opts;
   };
-  const startSel = el("select", { style: "width:auto" }, hourOpts(grid.startMin));
-  const endSel = el("select", { style: "width:auto" }, hourOpts(grid.endMin));
-  const stepSel = el("select", { style: "width:auto" },
-    [15, 30, 60].map((s) => {
-      const o = el("option", { value: String(s) }, `${s} min`);
-      if (s === grid.step) o.setAttribute("selected", "");
-      return o;
-    })
-  );
+  const startSel = el("select", { style: "width:auto" }, halfHourOpts(grid.startMin));
+  const endSel = el("select", { style: "width:auto" }, halfHourOpts(grid.endMin));
 
   function controlsChanged() {
     grid.startDate = dateInput.value || grid.startDate;
@@ -163,25 +181,13 @@ function createTimeGridEditor(q, onChange) {
     grid.startMin = Number(startSel.value);
     grid.endMin = Number(endSel.value);
     if (grid.endMin <= grid.startMin) {
-      grid.endMin = Math.min(24 * 60, grid.startMin + 60);
+      grid.endMin = Math.min(24 * 60, grid.startMin + TG_STEP);
       endSel.value = String(grid.endMin);
-    }
-    const oldStep = grid.step;
-    grid.step = Number(stepSel.value);
-    if (grid.step !== oldStep) {
-      // Re-snap selections to the new step so they stay visible/editable.
-      const snapped = new Set();
-      for (const key of sel) {
-        const [date, m] = key.split("|");
-        snapped.add(`${date}|${Math.floor(Number(m) / grid.step) * grid.step}`);
-      }
-      sel.clear();
-      snapped.forEach((k) => sel.add(k));
     }
     buildGrid();
     syncSlots();
   }
-  [dateInput, daysInput, startSel, endSel, stepSel].forEach((c) =>
+  [dateInput, daysInput, startSel, endSel].forEach((c) =>
     c.addEventListener("change", controlsChanged)
   );
 
@@ -195,7 +201,6 @@ function createTimeGridEditor(q, onChange) {
       el("label", { class: "tg-ctl" }, "Days", daysInput),
       el("label", { class: "tg-ctl" }, "Start", startSel),
       el("label", { class: "tg-ctl" }, "End", endSel),
-      el("label", { class: "tg-ctl" }, "Step", stepSel),
       el("label", { class: "tg-ctl" }, "Timezone", tzSel),
       el("button", {
         class: "small", type: "button",
@@ -209,51 +214,66 @@ function createTimeGridEditor(q, onChange) {
 
   // --- grid rendering ---
   let gridEl = null;
+  let datesISO = [];
   function buildGrid() {
     const start = tgParseISO(grid.startDate);
-    const dates = [];
+    datesISO = [];
     for (let i = 0; i < grid.days; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
-      dates.push(d);
+      datesISO.push(tgDateISO(d));
     }
     gridEl = el("div", { class: "tg-grid" });
     gridEl.style.gridTemplateColumns = `56px repeat(${grid.days}, 1fr)`;
 
     gridEl.append(el("div", { class: "tg-corner" }));
-    for (const d of dates) {
+    for (const iso of datesISO) {
+      const d = tgParseISO(iso);
       gridEl.append(el("div", { class: "tg-head" },
         TG_DAYS[d.getDay()], el("div", {}, `${TG_MONTHS[d.getMonth()]} ${d.getDate()}`)));
     }
-    for (let m = grid.startMin; m < grid.endMin; m += grid.step) {
+    for (let m = grid.startMin; m < grid.endMin; m += TG_STEP) {
       const hour = m % 60 === 0;
-      gridEl.append(el("div", { class: "tg-time" }, hour || grid.step === 60 ? tgFmtTime(m) : ""));
-      for (const d of dates) {
-        const key = `${tgDateISO(d)}|${m}`;
-        const cell = el("div", {
+      gridEl.append(el("div", { class: "tg-time" }, hour ? tgFmtTime(m) : ""));
+      for (let c = 0; c < datesISO.length; c++) {
+        const key = `${datesISO[c]}|${m}`;
+        gridEl.append(el("div", {
           class: "tg-cell" + (hour ? " hour" : "") + (sel.has(key) ? " sel" : ""),
-          "data-key": key,
-        });
-        gridEl.append(cell);
+          "data-key": key, "data-row": String(m), "data-col": String(c),
+        }));
       }
     }
     gridBox.replaceChildren(gridEl);
     attachPaint();
   }
 
-  // --- drag painting (mouse + touch via pointer events) ---
+  // --- drag painting: rectangle bounds between anchor and current cell ---
   let dragging = false;
-  let paintMode = true; // true = select, false = erase (decided by first cell)
-  // Detach from the global dispatcher if this editor is removed mid-drag.
+  let anchor = null; // {row, col}
+  let baseSel = null; // selection snapshot at drag start
+  let rectMode = true; // true = add rect, false = remove rect
   const paintState = {
     finish: () => { dragging = false; syncSlots(); },
     abort: () => { dragging = false; },
   };
 
-  function applyCell(cell) {
-    const key = cell.getAttribute("data-key");
-    if (paintMode) { sel.add(key); cell.classList.add("sel"); }
-    else { sel.delete(key); cell.classList.remove("sel"); }
+  function applyRect(row, col) {
+    const r0 = Math.min(anchor.row, row), r1 = Math.max(anchor.row, row);
+    const c0 = Math.min(anchor.col, col), c1 = Math.max(anchor.col, col);
+    sel.clear();
+    baseSel.forEach((k) => sel.add(k));
+    for (const cell of gridEl.children) {
+      if (!cell.getAttribute) continue;
+      const cr = Number(cell.getAttribute("data-row"));
+      const cc = Number(cell.getAttribute("data-col"));
+      if (!cell.getAttribute("data-key")) continue;
+      const key = cell.getAttribute("data-key");
+      if (cr >= r0 && cr <= r1 && cc >= c0 && cc <= c1) {
+        if (rectMode) sel.add(key); else sel.delete(key);
+      }
+      if (sel.has(key)) cell.classList.add("sel");
+      else cell.classList.remove("sel");
+    }
   }
 
   function cellAt(x, y) {
@@ -269,13 +289,15 @@ function createTimeGridEditor(q, onChange) {
       e.preventDefault();
       dragging = true;
       tgActivePaint = paintState;
-      paintMode = !sel.has(cell.getAttribute("data-key"));
-      applyCell(cell);
+      anchor = { row: Number(cell.getAttribute("data-row")), col: Number(cell.getAttribute("data-col")) };
+      baseSel = new Set(sel);
+      rectMode = !sel.has(cell.getAttribute("data-key"));
+      applyRect(anchor.row, anchor.col); // click = 1x1 rect = toggle
     });
     gridEl.addEventListener("pointermove", (e) => {
       if (!dragging) return;
       const cell = cellAt(e.clientX, e.clientY);
-      if (cell) applyCell(cell);
+      if (cell) applyRect(Number(cell.getAttribute("data-row")), Number(cell.getAttribute("data-col")));
     });
   }
 

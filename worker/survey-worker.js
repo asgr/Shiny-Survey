@@ -128,6 +128,31 @@ function validateAnswers(survey, raw) {
           return { error: `Missing required answer: ${q.label}` };
         }
         grid[slot] = sv ?? null;
+        // Painted-grid respondents may send exact partial availability under
+        // "<slot> (parts)": ISO instants that must lie within the slot's
+        // own 30-minute cells (validated against slotCells/slotTimes).
+        const parts = v && typeof v === "object" ? v[`${slot} (parts)`] : undefined;
+        if (parts !== undefined && parts !== null) {
+          if (!Array.isArray(parts) || parts.length > 96) return { error: "Invalid parts" };
+          const cells = q.slotCells && q.slotCells[slot];
+          const allowed = new Set(Array.isArray(cells) ? cells : []);
+          for (const p of parts) {
+            if (typeof p !== "string") return { error: "Invalid parts" };
+            const ts = Date.parse(p);
+            if (isNaN(ts)) return { error: "Invalid parts" };
+            // With slotCells require an exact cell match; otherwise (legacy
+            // surveys) accept instants inside the slot's time range.
+            if (allowed.size) {
+              if (!allowed.has(new Date(ts).toISOString())) return { error: "Part outside slot" };
+            } else {
+              const t = q.slotTimes && q.slotTimes[slot];
+              if (!t || ts < Date.parse(t.start) || ts >= Date.parse(t.end)) {
+                return { error: "Part outside slot" };
+              }
+            }
+          }
+          grid[`${slot} (parts)`] = parts.map((p) => new Date(Date.parse(p)).toISOString());
+        }
       }
       answers[q.id] = grid;
     }

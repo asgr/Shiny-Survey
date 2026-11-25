@@ -43,10 +43,11 @@ function collectAnswers(survey, form) {
     } else if (q.type === "meeting") {
       const box = form.querySelector(`.question[data-qid="${q.id}"]`);
       if (box && box._respondGrid) {
-        // Painted grid: unpainted blocks mean "not available".
+        // Painted grid: full block = yes, partial = maybe, none = no.
         const grid = box._respondGrid.getAnswers();
         answers[q.id] = grid;
-        if (q.required && !Object.values(grid).includes("yes")) missing.push(q.label);
+        const anySelected = Object.values(grid).some((v) => v === "yes" || v === "maybe");
+        if (q.required && !anySelected) missing.push(q.label);
       } else {
         const grid = {};
         (q.slots || []).forEach((slot, i) => {

@@ -75,9 +75,15 @@ records_to_df <- function(records) {
     for (qid in names(r$answers)) {
       a <- r$answers[[qid]]
       if (is.list(a) && !is.null(names(a))) {
-        # meeting grid: named list slot -> yes/no/maybe
+        # meeting grid: named list slot -> yes/no/maybe, plus optional
+        # "<slot> (parts)" lists of exact 30-min ISO instants
         for (slot in names(a)) {
-          row[[paste0(qid, ": ", slot)]] <- a[[slot]] %||% NA_character_
+          val <- a[[slot]]
+          if (is.list(val) || length(val) > 1) {
+            row[[paste0(qid, ": ", slot)]] <- paste(unlist(val), collapse = "; ")
+          } else {
+            row[[paste0(qid, ": ", slot)]] <- val %||% NA_character_
+          }
         }
       } else if (is.list(a) || length(a) > 1) {
         row[[qid]] <- paste(unlist(a), collapse = "; ")
@@ -109,9 +115,11 @@ base64enc_decode <- function(x) {
 }
 
 # Availability tally for a meeting-grid question: counts of yes/no/maybe
-# per candidate slot, sorted by most "yes" votes.
+# per candidate slot, sorted by most "yes" votes. "(parts)" detail columns
+# are excluded here; use cell_tally() for 30-minute resolution.
 meeting_tally <- function(df, question_id) {
   cols <- grep(paste0("^", question_id, ": "), names(df), value = TRUE)
+  cols <- cols[!grepl("\\(parts\\)$", cols)]
   if (length(cols) == 0) stop("No meeting-grid columns for question ", question_id)
   tally <- do.call(rbind, lapply(cols, function(cn) {
     vals <- df[[cn]]
@@ -124,6 +132,64 @@ meeting_tally <- function(df, question_id) {
     )
   }))
   tally[order(-tally$yes, -tally$maybe), ]
+}
+
+# when2meet-style availability per 30-minute cell. Uses the exact "(parts)"
+# instants where present; full "yes" answers expand to all of the slot's
+# cells (from the survey definition). Returns counts per UTC instant,
+# sorted by availability; add a `tz` to see wall-clock times in that zone.
+cell_tally <- function(df, question_id, survey_id,
+                       tz = "UTC", definition = NULL, ...) {
+  def <- definition %||% fetch_definition(survey_id, ...)
+  matches <- Filter(function(x) identical(x$id, question_id), def$questions)
+  if (length(matches) == 0) stop("Question ", question_id, " not in survey definition")
+  q <- matches[[1]]
+  step_ms <- 30 * 60 * 1000
+
+  slot_cells <- function(slot) {
+    if (!is.null(q$slotCells[[slot]])) {
+      return(as.numeric(as.POSIXct(unlist(q$slotCells[[slot]]),
+                                   format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")) * 1000)
+    }
+    t <- q$slotTimes[[slot]]
+    if (is.null(t)) return(numeric(0))
+    s <- as.numeric(as.POSIXct(t$start, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")) * 1000
+    e <- as.numeric(as.POSIXct(t$end, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")) * 1000
+    seq(s, e - 1, by = step_ms)
+  }
+
+  counts <- new.env(parent = emptyenv())
+  bump <- function(ts) {
+    k <- as.character(ts)
+    counts[[k]] <- (counts[[k]] %||% 0L) + 1L
+  }
+  for (slot in unlist(q$slots)) {
+    status_col <- paste0(question_id, ": ", slot)
+    parts_col <- paste0(question_id, ": ", slot, " (parts)")
+    for (i in seq_len(nrow(df))) {
+      status <- if (status_col %in% names(df)) df[[status_col]][i] else NA_character_
+      parts <- if (parts_col %in% names(df)) df[[parts_col]][i] else NA_character_
+      if (!is.na(parts) && nzchar(parts)) {
+        instants <- strsplit(parts, "; ")[[1]]
+        for (p in instants) {
+          bump(as.numeric(as.POSIXct(p, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")) * 1000)
+        }
+      } else if (!is.na(status) && status == "yes") {
+        for (ts in slot_cells(slot)) bump(ts)
+      }
+    }
+  }
+  keys <- ls(counts)
+  if (length(keys) == 0) return(data.frame())
+  ts <- as.numeric(keys)
+  out <- data.frame(
+    utc = as.POSIXct(ts / 1000, origin = "1970-01-01", tz = "UTC"),
+    available = vapply(keys, function(k) counts[[k]], integer(1))
+  )
+  out$local <- format(out$utc, tz = tz, usetz = TRUE)
+  out <- out[order(-out$available, out$utc), ]
+  rownames(out) <- NULL
+  out[, c("local", "utc", "available")]
 }
 
 # Convenience: fetch and write a CSV next to your analysis.
