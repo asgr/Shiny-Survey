@@ -5,7 +5,7 @@
   "collectName": true,
   "dedup": "browser",
   "maxResponses": 200,
-  "open": true,
+  "open": false,
   "createdAt": "2026-11-25T09:59:27Z",
   "questions": [
     {
