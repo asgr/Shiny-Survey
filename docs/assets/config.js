@@ -5,5 +5,5 @@ window.SURVEY_CONFIG = {
   publicRepo: "Shiny-Survey",
 
   // URL of your deployed Cloudflare Worker (no trailing slash)
-  workerUrl: "https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev",
+  workerUrl: "https://asgr-survey.waves-9b7.workers.dev",
 };
