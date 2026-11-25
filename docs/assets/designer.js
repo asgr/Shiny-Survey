@@ -211,7 +211,8 @@ async function refreshList() {
         el("button", { class: "small", onclick: () => loadSurvey(id) }, "Edit"),
         el("button", { class: "small primary", onclick: () => window.open(`results.html?id=${encodeURIComponent(id)}`, "_blank") }, "Results"),
         el("button", { class: "small", onclick: (e) => copyLink(id, e.target) }, "Copy link"),
-        el("button", { class: "small", onclick: (e) => toggleOpen(id, e.target) }, "Open / close")
+        el("button", { class: "small", onclick: (e) => toggleOpen(id, e.target) }, "Open / close"),
+        el("button", { class: "small danger", onclick: (e) => deleteSurvey(id, e.target) }, "Delete")
       );
       row.append(title, actions);
       items.push(row);
@@ -259,6 +260,37 @@ async function toggleOpen(id, btn) {
     refreshList();
   } catch (err) {
     setStatus("publish-status", `Toggle failed: ${err.message}`, "error");
+    btn.disabled = false;
+  }
+}
+
+async function deleteSurvey(id, btn) {
+  const ok = confirm(
+    `Delete survey "${id}"?\n\n` +
+    "This removes the survey definition and its share link stops working " +
+    "(within a few minutes of GitHub cache expiry).\n\n" +
+    "Responses already collected are NOT deleted — they stay in your " +
+    "private repo and remain readable in R. Remove them there separately " +
+    "if you want them gone.\n\n" +
+    "This cannot be undone from this page."
+  );
+  if (!ok) return;
+  btn.disabled = true;
+  try {
+    const f = await getSurveyFile(id, getToken());
+    if (!f) throw new Error("survey file not found (already deleted?)");
+    await deleteSurveyFile(id, getToken(), f.sha);
+    if (survey.id === id) {
+      survey = blankSurvey();
+      editingSha = null;
+      stateToSettings();
+      redraw();
+      $("share").style.display = "none";
+    }
+    setStatus("publish-status", `Deleted "${id}". Collected responses remain in the private repo.`, "ok");
+    refreshList();
+  } catch (err) {
+    setStatus("publish-status", `Delete failed: ${err.message}`, "error");
     btn.disabled = false;
   }
 }

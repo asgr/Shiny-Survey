@@ -81,6 +81,14 @@ async function putSurveyFile(id, survey, token, sha, message) {
   return ghRequest(`surveys/${id}.json`, { method: "PUT", token, body });
 }
 
+async function deleteSurveyFile(id, token, sha) {
+  return ghRequest(`surveys/${id}.json`, {
+    method: "DELETE",
+    token,
+    body: { message: `Delete survey ${id}`, sha, branch: BRANCH },
+  });
+}
+
 async function listSurveys(token) {
   const data = await ghRequest("surveys", { token, missingOk: true });
   if (!Array.isArray(data)) return [];
