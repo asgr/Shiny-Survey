@@ -88,7 +88,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const hint = el("div", { class: "hint" },
     readOnly
       ? "Preview: this is what respondents will see and paint."
-      : "Highlighted cells are the candidate times. Drag a box over the times that work for you; click a selected cell to deselect it.");
+      : "Click a highlighted block to select the whole time (click again to deselect). Only part of a block works? Drag across just the 30-minute cells you can do.");
   const tzSel = zoneSelect(viewZone, (z) => { viewZone = z; buildGrid(); });
   const tzRow = el("div", { class: "row", style: "margin:6px 0" },
     el("label", { class: "tg-ctl" }, "Show times in", tzSel));
@@ -101,11 +101,35 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   let anchor = null;   // {row, col} global row index / column
   let baseChosen = null;
   let rectMode = true;
+  let moved = false;       // did the pointer leave the anchor cell?
+  let downBlock = null;    // block label under pointerdown (for click=block)
   let layout = null;  // set by buildGrid: {rowMin, rowMax, rowInstant(r,c), rowsPerDay, crosses, dates}
   const paintState = {
-    finish: () => { dragging = false; refreshSummary(); },
+    finish: () => {
+      if (dragging && !moved && downBlock) toggleBlock(downBlock);
+      dragging = false;
+      refreshSummary();
+    },
     abort: () => { dragging = false; },
   };
+
+  // Click (no drag) toggles the WHOLE candidate block: the common case is
+  // "this session works / doesn't". Dragging paints exact 30-min cells.
+  function toggleBlock(label) {
+    const b = blocks.find((x) => x.label === label);
+    if (!b) return;
+    const fullyChosen = b.cells.every((ts) => chosen.has(ts));
+    for (const ts of b.cells) {
+      if (fullyChosen) chosen.delete(ts); else chosen.add(ts);
+    }
+    for (const cell of gridEl.children) {
+      if (!cell.getAttribute || !cell.getAttribute("data-ts")) continue;
+      const ts = Number(cell.getAttribute("data-ts"));
+      if (!b.cells.includes(ts)) continue;
+      if (chosen.has(ts)) cell.classList.add("chosen");
+      else cell.classList.remove("chosen");
+    }
+  }
 
   function buildGrid() {
     // Place every allowed cell on the viewer's wall clock.
@@ -214,20 +238,33 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       if (!cell) return;
       e.preventDefault();
       dragging = true;
+      moved = false;
       tgActivePaint = paintState;
       anchor = { row: Number(cell.getAttribute("data-row")), col: Number(cell.getAttribute("data-col")) };
       baseChosen = new Set(chosen);
-      // Blank anchor = select mode; allowed-cell anchor toggles its state.
       const ts = cell.getAttribute("data-ts");
-      rectMode = ts ? !chosen.has(Number(ts)) : true;
-      applyRect(anchor.row, anchor.col); // click = 1x1 rect = toggle
+      downBlock = ts ? allowedAt.get(Number(ts)) : null;
+      // Drag mode decided by anchor state: unselected/partial -> select,
+      // fully-chosen block or chosen cell -> erase.
+      if (downBlock) {
+        const b = blocks.find((x) => x.label === downBlock);
+        rectMode = !b.cells.every((t) => chosen.has(t));
+      } else {
+        rectMode = true;
+      }
+      // No visual change yet: a plain click toggles the whole block on
+      // pointerup; the first pointermove starts cell-level rect painting.
     });
     gridEl.addEventListener("pointermove", (e) => {
       if (!dragging) return;
       const t = document.elementFromPoint(e.clientX, e.clientY);
       const cell = t && t.closest ? t.closest(".rg-cell") : null;
       if (cell && gridEl.contains(cell)) {
-        applyRect(Number(cell.getAttribute("data-row")), Number(cell.getAttribute("data-col")));
+        const r = Number(cell.getAttribute("data-row"));
+        const c = Number(cell.getAttribute("data-col"));
+        if (!moved && r === anchor.row && c === anchor.col) return;
+        moved = true;
+        applyRect(r, c);
       }
     });
   }
