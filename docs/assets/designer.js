@@ -183,7 +183,8 @@ async function publish() {
     $("share-link").textContent = link;
     $("share").style.display = "block";
     $("publish-info").textContent = "";
-    setStatus("publish-status", "Published. The link works within a few seconds.", "ok");
+    setStatus("publish-status",
+      "Published. Respondents may see the previous version for up to 5 minutes (GitHub caching).", "ok");
     refreshList();
   } catch (err) {
     $("publish-info").textContent = "";
@@ -237,7 +238,8 @@ async function loadSurvey(id) {
     redraw();
     $("share-link").textContent = surveyLink(id);
     $("share").style.display = "block";
-    setStatus("publish-status", `Editing "${survey.title}". Publish to save changes.`, "ok");
+    setStatus("publish-status",
+      `Editing "${survey.title}". Change settings/questions, then click "Publish survey" to save — edits are not live until you publish.`, "ok");
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (err) {
     setStatus("publish-status", `Could not load: ${err.message}`, "error");

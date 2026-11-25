@@ -80,8 +80,10 @@ async function sha256Hex(str) {
 async function getDefinition(env, surveyId) {
   const cached = definitionCache.get(surveyId);
   if (cached && Date.now() - cached.fetchedAt < DEFINITION_TTL_MS) return cached.survey;
+  // Cache-buster: raw.githubusercontent.com caches ~5 min server-side;
+  // a unique query string forces a fresh read so edits apply immediately.
   const res = await fetch(
-    `https://raw.githubusercontent.com/${env.GH_OWNER}/${env.PUBLIC_REPO}/main/docs/surveys/${surveyId}.json`,
+    `https://raw.githubusercontent.com/${env.GH_OWNER}/${env.PUBLIC_REPO}/main/docs/surveys/${surveyId}.json?t=${Date.now()}`,
     { cf: { cacheTtl: 0 } }
   );
   if (res.status === 404) return null;

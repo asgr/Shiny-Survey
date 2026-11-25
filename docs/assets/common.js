@@ -8,6 +8,20 @@ function rawUrl(path) {
   return `https://raw.githubusercontent.com/${CFG.owner}/${CFG.publicRepo}/${BRANCH}/docs/${path}`;
 }
 
+// raw.githubusercontent.com caches for up to 5 minutes regardless of request
+// cache mode. When the viewer has a token (designer/creator), read via the
+// contents API instead — always current. Respondents use raw + cache-buster.
+async function fetchSurveyDefinition(id, token) {
+  if (token) {
+    const f = await getSurveyFile(id, token);
+    return f ? f.survey : null;
+  }
+  const res = await fetch(`${rawUrl(`surveys/${id}.json`)}?t=${Date.now()}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 function apiUrl(path) {
   return `https://api.github.com/repos/${CFG.owner}/${CFG.publicRepo}/contents/docs/${path}`;
 }

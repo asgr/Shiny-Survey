@@ -140,13 +140,11 @@ function renderSurvey(survey, id) {
     return;
   }
   try {
-    const res = await fetch(rawUrl(`surveys/${id}.json`), { cache: "no-store" });
-    if (res.status === 404) {
+    const survey = await fetchSurveyDefinition(id);
+    if (!survey) {
       showMessage("Survey not found", "This survey does not exist (or was removed). Check the link with the person who shared it.");
       return;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const survey = await res.json();
     if (survey.open === false) {
       showMessage("Survey closed", "This survey is no longer accepting responses.");
       return;
