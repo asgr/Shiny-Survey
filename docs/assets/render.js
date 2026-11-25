@@ -44,9 +44,11 @@ function renderQuestion(q, index, opts = {}) {
       // Unparseable (hand-typed) slots: fall through to the table.
     }
     const table = el("table", { class: "grid" });
-    const cols = q.choices || ["yes", "no", "maybe"];
+    // Binary availability (legacy "maybe" choices are ignored).
+    const cols = ["yes", "no"];
     table.append(
-      el("tr", {}, el("th", {}, "Date / time"), cols.map((c) => el("th", {}, c)))
+      el("tr", {}, el("th", {}, "Date / time"),
+        el("th", {}, "available"), el("th", {}, "not available"))
     );
     (q.slots || []).forEach((slot, i) => {
       const slotName = `${name}__${i}`;

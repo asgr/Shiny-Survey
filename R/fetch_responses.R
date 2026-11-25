@@ -114,24 +114,29 @@ base64enc_decode <- function(x) {
   jsonlite::base64_dec(gsub("\\s", "", x))
 }
 
-# Availability tally for a meeting-grid question: counts of yes/no/maybe
-# per candidate slot, sorted by most "yes" votes. "(parts)" detail columns
-# are excluded here; use cell_tally() for 30-minute resolution.
+# Binary availability per candidate slot, sorted by most available.
+# Any expressed availability counts: "yes", legacy "maybe", or painted
+# "(parts)". Use cell_tally() for 30-minute resolution.
 meeting_tally <- function(df, question_id) {
   cols <- grep(paste0("^", question_id, ": "), names(df), value = TRUE)
   cols <- cols[!grepl("\\(parts\\)$", cols)]
   if (length(cols) == 0) stop("No meeting-grid columns for question ", question_id)
   tally <- do.call(rbind, lapply(cols, function(cn) {
+    slot <- sub(paste0("^", question_id, ": "), "", cn)
     vals <- df[[cn]]
+    parts_cn <- paste0(cn, " (parts)")
+    has_parts <- if (parts_cn %in% names(df)) {
+      !is.na(df[[parts_cn]]) & nzchar(df[[parts_cn]])
+    } else FALSE
+    available <- (!is.na(vals) & vals %in% c("yes", "maybe")) | has_parts
     data.frame(
-      slot = sub(paste0("^", question_id, ": "), "", cn),
-      yes = sum(vals == "yes", na.rm = TRUE),
-      maybe = sum(vals == "maybe", na.rm = TRUE),
-      no = sum(vals == "no", na.rm = TRUE),
-      unanswered = sum(is.na(vals))
+      slot = slot,
+      available = sum(available),
+      not_available = sum(!is.na(vals) & vals == "no" & !has_parts),
+      unanswered = sum(is.na(vals) & !has_parts)
     )
   }))
-  tally[order(-tally$yes, -tally$maybe), ]
+  tally[order(-tally$available), ]
 }
 
 # when2meet-style availability per 30-minute cell. Uses the exact "(parts)"
@@ -174,7 +179,7 @@ cell_tally <- function(df, question_id, survey_id,
         for (p in instants) {
           bump(as.numeric(as.POSIXct(p, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")) * 1000)
         }
-      } else if (!is.na(status) && status == "yes") {
+      } else if (!is.na(status) && status %in% c("yes", "maybe")) {
         for (ts in slot_cells(slot)) bump(ts)
       }
     }

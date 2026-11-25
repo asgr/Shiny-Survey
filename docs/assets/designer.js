@@ -88,7 +88,7 @@ function questionEditor(q, i) {
   if (q.type === "meeting") {
     card.append(
       el("div", { class: "hint", style: "margin-top:8px" },
-        "Drag across the grid to pick candidate times (respondents mark yes / no / maybe for each). " +
+        "Drag across the grid to pick candidate times (respondents mark which times they're available). " +
         "Adjacent cells merge into one time range."),
       createTimeGridEditor(q, drawPreview)
     );
@@ -114,7 +114,7 @@ function addQuestion(type) {
   // Random id (not positional) so reordering never collides with stored answers.
   const q = { id: `q_${newSurveyId()}`, type, label: "", required: false };
   if (type === "single" || type === "multi") q.options = [];
-  if (type === "meeting") { q.slots = []; q.choices = ["yes", "no", "maybe"]; }
+  if (type === "meeting") { q.slots = []; q.choices = ["yes", "no"]; }
   survey.questions.push(q);
   redraw();
 }

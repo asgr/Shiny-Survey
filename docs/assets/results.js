@@ -86,21 +86,23 @@ function textSummary(q, responses) {
 function meetingSummary(q, responses, survey) {
   const blocks = typeof resolveSlotCells === "function" ? resolveSlotCells(q, new Date(survey.createdAt)) : null;
 
-  // Per-slot yes/maybe/no counts (always available).
+  // Per-slot available/not counts. Legacy "maybe" answers count as
+  // available (any expressed availability is a yes).
   const slotRows = (q.slots || []).map((slot) => {
-    let yes = 0, maybe = 0, no = 0, un = 0;
+    let yes = 0, no = 0, un = 0;
     for (const r of responses) {
-      const v = ((r.answers || {})[q.id] || {})[slot];
-      if (v === "yes") yes++;
-      else if (v === "maybe") maybe++;
+      const a = (r.answers || {})[q.id] || {};
+      const v = a[slot];
+      const hasParts = Array.isArray(a[`${slot} (parts)`]) && a[`${slot} (parts)`].length;
+      if (v === "yes" || v === "maybe" || hasParts) yes++;
       else if (v === "no") no++;
       else un++;
     }
-    return [slot, yes, maybe, no, un];
+    return [slot, yes, no, un];
   });
-  slotRows.sort((a, b) => b[1] - a[1] || b[2] - a[2]);
+  slotRows.sort((a, b) => b[1] - a[1]);
   const box = el("div", {},
-    tallyTable(slotRows, ["Time", "Yes", "Maybe (part)", "No", "No answer"]));
+    tallyTable(slotRows, ["Time", "Available", "Not available", "No answer"]));
 
   if (!blocks) return box;
 
@@ -114,7 +116,7 @@ function meetingSummary(q, responses, survey) {
       let instants = null;
       if (Array.isArray(parts) && parts.length) {
         instants = parts.map((p) => Date.parse(p)).filter((ts) => b.cells.includes(ts));
-      } else if (a[b.label] === "yes") {
+      } else if (a[b.label] === "yes" || a[b.label] === "maybe") {
         instants = b.cells;
       }
       if (!instants) continue;

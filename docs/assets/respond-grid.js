@@ -1,8 +1,9 @@
 // Respondent-side when2meet-style availability grid.
 // Candidate times render as highlighted 30-minute cells; the respondent
-// drags a rectangle over the cells that work for them (click toggles one).
-// Answers are per candidate block: full coverage = "yes", partial = "maybe",
-// none = "no", plus the exact chosen 30-min instants in "<slot> (parts)".
+// clicks a block or drags a rectangle over the cells that work for them.
+// Answers are BINARY per candidate block: any painted cells = "yes",
+// none = "no". The exact chosen 30-min instants ride along in
+// "<slot> (parts)" to power the availability heatmap.
 // Block keys stay the organizer's ORIGINAL labels, so answers from any
 // viewer timezone aggregate into the same columns.
 "use strict";
@@ -88,7 +89,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const hint = el("div", { class: "hint" },
     readOnly
       ? "Preview: this is what respondents will see and paint."
-      : "Click a highlighted block to select the whole time (click again to deselect). Only part of a block works? Drag across just the 30-minute cells you can do.");
+      : "Click a highlighted block if that time works (click again to deselect). Only part of it works? Drag across just the 30-minute cells you can do — any painted time counts as available.");
   const tzSel = zoneSelect(viewZone, (z) => { viewZone = z; buildGrid(); });
   const tzRow = el("div", { class: "row", style: "margin:6px 0" },
     el("label", { class: "tg-ctl" }, "Show times in", tzSel));
@@ -197,16 +198,18 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
     refreshSummary();
   }
 
+  // Binary availability: any painted cell in the window = available.
   function blockStatus(b) {
-    const n = b.cells.filter((ts) => chosen.has(ts)).length;
-    return n === 0 ? "no" : n === b.cells.length ? "yes" : "maybe";
+    return b.cells.some((ts) => chosen.has(ts)) ? "yes" : "no";
   }
 
   function refreshSummary() {
     const parts = blocks
-      .map((b) => ({ b, s: blockStatus(b) }))
-      .filter((x) => x.s !== "no")
-      .map((x) => `${x.b.label}${x.s === "maybe" ? " (part)" : ""}`);
+      .filter((b) => blockStatus(b) === "yes")
+      .map((b) => {
+        const n = b.cells.filter((ts) => chosen.has(ts)).length;
+        return n < b.cells.length ? `${b.label} (${n * 30} min)` : b.label;
+      });
     summary.textContent = parts.length
       ? `You selected: ${parts.join(" \u00b7 ")}`
       : "Nothing selected yet.";

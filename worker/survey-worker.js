@@ -121,7 +121,8 @@ function validateAnswers(survey, raw) {
       }
       answers[q.id] = [...new Set(v)];
     } else if (q.type === "meeting") {
-      const cols = q.choices || ["yes", "no", "maybe"];
+      // "maybe" accepted only for legacy definitions that still list it.
+      const cols = q.choices || ["yes", "no"];
       const grid = {};
       for (const slot of q.slots || []) {
         const sv = v && typeof v === "object" ? v[slot] : null;

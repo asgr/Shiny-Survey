@@ -43,10 +43,10 @@ function collectAnswers(survey, form) {
     } else if (q.type === "meeting") {
       const box = form.querySelector(`.question[data-qid="${q.id}"]`);
       if (box && box._respondGrid) {
-        // Painted grid: full block = yes, partial = maybe, none = no.
+        // Painted grid: binary — any painted cells in a window = yes.
         const grid = box._respondGrid.getAnswers();
         answers[q.id] = grid;
-        const anySelected = Object.values(grid).some((v) => v === "yes" || v === "maybe");
+        const anySelected = Object.values(grid).includes("yes");
         if (q.required && !anySelected) missing.push(q.label);
       } else {
         const grid = {};
