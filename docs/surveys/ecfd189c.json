@@ -1,7 +1,7 @@
 {
   "id": "ecfd189c",
   "title": "Sabine Meeting",
-  "description": "",
+  "description": "I want to check this changes.",
   "collectName": true,
   "dedup": "browser+ip",
   "maxResponses": 200,
