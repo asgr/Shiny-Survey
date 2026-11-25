@@ -4,6 +4,9 @@ window.SURVEY_CONFIG = {
   owner: "asgr",
   publicRepo: "Shiny-Survey",
 
+  // Private repo where responses are stored (results viewer reads this)
+  privateRepo: "survey-responses",
+
   // URL of your deployed Cloudflare Worker (no trailing slash)
   workerUrl: "https://asgr-survey.waves-9b7.workers.dev",
 };

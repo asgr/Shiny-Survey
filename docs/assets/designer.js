@@ -209,6 +209,7 @@ async function refreshList() {
       const title = el("div", {}, el("strong", {}, id));
       const actions = el("div", { class: "row", style: "margin-top:4px" },
         el("button", { class: "small", onclick: () => loadSurvey(id) }, "Edit"),
+        el("button", { class: "small primary", onclick: () => window.open(`results.html?id=${encodeURIComponent(id)}`, "_blank") }, "Results"),
         el("button", { class: "small", onclick: (e) => copyLink(id, e.target) }, "Copy link"),
         el("button", { class: "small", onclick: (e) => toggleOpen(id, e.target) }, "Open / close")
       );

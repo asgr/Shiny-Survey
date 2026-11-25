@@ -1,10 +1,11 @@
 {
   "common.js": "d5ec9fcc42",
-  "config.js": "a38207f5a6",
-  "designer.js": "012ac01aea",
+  "config.js": "7e6ca4eba1",
+  "designer.js": "b1f932b251",
   "render.js": "e93fe03a9c",
   "respond-grid.js": "54f6110352",
-  "style.css": "410177f92a",
+  "results.js": "e6d80782b5",
+  "style.css": "e1b0ffc538",
   "survey.js": "c8752bebd6",
   "timegrid.js": "d454e134b5",
   "tz.js": "6f432782be"

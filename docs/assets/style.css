@@ -139,6 +139,13 @@ code.link { word-break: break-all; font-size: 0.85rem; background: var(--bg); pa
 
 .rg-grid { max-height: 70vh; overflow-y: auto; }
 
+/* results heatmap */
+.heat-cell { position: relative; cursor: default; }
+.heat-n {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-size: 0.75rem; font-weight: 600; color: #0c3d26;
+}
+
 /* respondent availability grid: allowed = candidate, chosen = works for me */
 .rg-cell { cursor: default; }
 .rg-cell.allowed { background: #dbe7ff; cursor: pointer; }
