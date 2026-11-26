@@ -20,8 +20,16 @@ You ──results page / R script──────▶ Private repo (your token,
 
 ## Setting up with an AI assistant (recommended)
 
-Open this repo in an AI coding assistant (Claude Code, Posit Assistant,
-Cursor, Copilot, …) and paste this prompt:
+First, clone this repo to your local machine (the assistant needs the
+files locally to configure and push them to your own repos):
+
+```sh
+git clone https://github.com/asgr/Shiny-Survey.git
+cd Shiny-Survey
+```
+
+Open the cloned folder in an AI coding assistant (Claude Code, Posit
+Assistant, Cursor, Copilot, …) and paste this prompt:
 
 > Read AGENTS.md in this repository fully and deploy this survey system
 > for me as a NEW user. Do not reuse any names, URLs, or values from the
@@ -42,6 +50,10 @@ python3) and edit files in the repo. You will need a GitHub account and a
 free Cloudflare account; everything else is guided.
 
 ## Manual one-time setup (~15 minutes)
+
+Start by cloning this repo locally (`git clone
+https://github.com/asgr/Shiny-Survey.git`) — you'll edit the config and
+push to your own repos from there.
 
 ### 1. Repos
 
