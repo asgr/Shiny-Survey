@@ -31,10 +31,15 @@ async function fetchResponses(surveyId) {
   const listing = await ghPrivate(`responses/${surveyId}`);
   if (!Array.isArray(listing)) return [];
   const files = listing.filter((f) => f.type === "file" && !f.name.startsWith("ip-"));
+  // Fetch files in parallel batches — a serial loop costs one API
+  // round-trip per respondent (~0.3s each from AU to GitHub).
+  const BATCH = 8;
   const out = [];
-  for (const f of files) {
-    const item = await ghPrivate(f.path);
-    if (item && item.content) out.push(JSON.parse(b64decode(item.content)));
+  for (let i = 0; i < files.length; i += BATCH) {
+    const items = await Promise.all(files.slice(i, i + BATCH).map((f) => ghPrivate(f.path)));
+    for (const item of items) {
+      if (item && item.content) out.push(JSON.parse(b64decode(item.content)));
+    }
   }
   out.sort((a, b) => (a.submittedAt || "").localeCompare(b.submittedAt || ""));
   return out;
