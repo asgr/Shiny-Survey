@@ -17,28 +17,29 @@
       link.href = base + href + "?v=" + (versions[href] || 0);
       document.head.append(link);
     }
-    // Sequential execution order matters: later scripts use earlier ones.
-    let chain = Promise.resolve();
+    // Insert all scripts at once with async=false: browsers DOWNLOAD them
+    // in parallel but EXECUTE in insertion order (whatwg "ordered async").
+    // A sequential await-load chain would serialize the network too.
+    let failed = false;
     for (const src of scripts) {
-      chain = chain.then(
-        () =>
-          new Promise((resolve, reject) => {
-            const s = document.createElement("script");
-            s.src = base + src + "?v=" + (versions[src] || 0);
-            s.onload = resolve;
-            s.onerror = () => reject(new Error("Failed to load " + src));
-            document.body.append(s);
-          })
-      );
+      const s = document.createElement("script");
+      s.src = base + src + "?v=" + (versions[src] || 0);
+      s.async = false;
+      s.onerror = () => {
+        if (failed) return;
+        failed = true;
+        showError(new Error("Failed to load " + src));
+      };
+      document.body.append(s);
     }
-    chain.catch((err) => {
+    function showError(err) {
       const box = document.getElementById("content") || document.body;
       const div = document.createElement("div");
       div.className = "card";
       div.textContent =
         "Could not load the survey app (" + err.message + "). Please reload the page.";
       box.append(div);
-    });
+    }
   }
 
   fetch(base + "manifest.json", { cache: "no-store" })

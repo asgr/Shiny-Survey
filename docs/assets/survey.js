@@ -63,17 +63,14 @@ function collectAnswers(survey, form) {
 }
 
 // Aggregate popularity per meeting question (no names/answers). Best-effort:
-// if the endpoint is unavailable the grid just renders unshaded.
-async function fetchPopularity(id, survey) {
-  if (!survey.questions.some((q) => q.type === "meeting")) return {};
-  try {
-    const res = await fetch(`${CFG.workerUrl}/popularity?surveyId=${encodeURIComponent(id)}`);
-    if (!res.ok) return {};
-    const data = await res.json();
-    return data && data.counts ? data : {};
-  } catch (e) {
-    return {};
-  }
+// if the endpoint is unavailable the grid just renders unshaded. Started in
+// parallel with the definition fetch (it only needs the id); non-meeting
+// surveys simply ignore the result.
+function fetchPopularity(id) {
+  return fetch(`${CFG.workerUrl}/popularity?surveyId=${encodeURIComponent(id)}`)
+    .then((res) => (res.ok ? res.json() : {}))
+    .then((data) => (data && data.counts ? data : {}))
+    .catch(() => ({}));
 }
 
 function renderSurvey(survey, id, popularity) {
@@ -159,6 +156,7 @@ function renderSurvey(survey, id, popularity) {
     return;
   }
   try {
+    const popPromise = fetchPopularity(id); // fire early, in parallel
     const survey = await fetchSurveyDefinition(id);
     if (!survey) {
       showMessage("Survey not found", "This survey does not exist (or was removed). Check the link with the person who shared it.");
@@ -168,7 +166,7 @@ function renderSurvey(survey, id, popularity) {
       showMessage("Survey closed", "This survey is no longer accepting responses.");
       return;
     }
-    const popularity = await fetchPopularity(id, survey);
+    const popularity = await popPromise;
     renderSurvey(survey, id, popularity);
   } catch (err) {
     showMessage("Could not load survey", `Something went wrong (${err.message}). Please try again later.`);
