@@ -34,7 +34,10 @@ export default {
       if (origin !== "*" && request.headers.get("Origin") !== origin) {
         return new Response(null, { status: 403 });
       }
-      return new Response(null, { status: 204, headers: cors });
+      return new Response(null, {
+        status: 204,
+        headers: { ...cors, "Access-Control-Allow-Headers": "Content-Type, X-Survey-Token" },
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
@@ -65,6 +68,21 @@ export default {
         return await handlePopularity(url, env, cors);
       } catch (err) {
         console.error("popularity failed:", err && err.message);
+        return json({ error: "Unavailable" }, 500, cors);
+      }
+    }
+
+    // Return the caller's OWN response, keyed by their browser token.
+    // The client sends the token in a header (never a URL); the Worker
+    // hashes it with IP_SALT to find the file. No token -> no lookup.
+    if (request.method === "GET" && url.pathname === "/response") {
+      if (origin !== "*" && request.headers.get("Origin") !== origin) {
+        return json({ error: "Forbidden origin" }, 403, cors);
+      }
+      try {
+        return await handleResponse(request, url, env, cors);
+      } catch (err) {
+        console.error("response lookup failed:", err && err.message);
         return json({ error: "Unavailable" }, 500, cors);
       }
     }
@@ -219,6 +237,29 @@ const popularityCache = new Map(); // surveyId -> {data, fetchedAt}
 const POPULARITY_TTL_MS = 60 * 1000;
 const countCache = new Map(); // surveyId -> {total, fetchedAt}
 
+// Look up the caller's own response by browser token (salted-hash filename).
+async function handleResponse(request, url, env, cors) {
+  const surveyId = String(url.searchParams.get("surveyId") || "");
+  if (!/^[a-zA-Z0-9_-]{4,40}$/.test(surveyId)) return json({ error: "Invalid survey id" }, 400, cors);
+  const token = request.headers.get("X-Survey-Token") || "";
+  if (!token || token.length > 64) return json({ error: "No token" }, 400, cors);
+  const key = (await sha256Hex(`${env.IP_SALT}:tok:${surveyId}:${token}`)).slice(0, 24);
+  const item = await fetch(contentsUrl(env, `responses/${surveyId}/${key}.json`), {
+    headers: ghHeaders(env),
+  });
+  if (item.status === 404) return json({ error: "Not found" }, 404, cors);
+  if (!item.ok) throw new Error(`lookup ${item.status}`);
+  const meta = await item.json();
+  const rec = JSON.parse(base64ToUtf8(meta.content || ""));
+  // Return only what the respondent may see: their own answers.
+  return json({
+    name: rec.name ?? null,
+    answers: rec.answers || {},
+    submittedAt: rec.submittedAt,
+    editedAt: rec.editedAt || null,
+  }, 200, cors);
+}
+
 // Bare response count from ONE directory listing (no per-file reads).
 async function handleCount(url, env, cors) {
   const surveyId = String(url.searchParams.get("surveyId") || "");
@@ -357,13 +398,16 @@ async function handleSubmit(request, env, cors) {
   // --- duplicate detection ---
   const mode = survey.dedup || "browser+ip";
   const dir = `responses/${surveyId}`;
+  const isEdit = body.edit === true;
   let keys = [];
+  let existingSha = null;
+  let existingRecord = null;
   if (mode !== "off") {
     const token = typeof body.token === "string" ? body.token.slice(0, 64) : "";
     if (token) {
       keys.push({ filename: `${(await sha256Hex(`${env.IP_SALT}:tok:${surveyId}:${token}`)).slice(0, 24)}.json` });
     }
-    if (mode === "browser+ip") {
+    if (mode === "browser+ip" && !isEdit) {
       const ip = request.headers.get("CF-Connecting-IP") || "";
       if (ip) {
         keys.push({ filename: `ip-${(await sha256Hex(`${env.IP_SALT}:ip:${surveyId}:${ip}`)).slice(0, 24)}.json` });
@@ -371,28 +415,45 @@ async function handleSubmit(request, env, cors) {
     }
     if (keys.length === 0) return json({ error: "Missing dedup token" }, 400, cors);
 
-    for (const key of keys) {
-      const check = await fetch(contentsUrl(env, `${dir}/${key.filename}`), {
+    if (isEdit) {
+      // Edit: the caller must already own a response under their token key.
+      if (!token) return json({ error: "Edit requires browser token" }, 400, cors);
+      const check = await fetch(contentsUrl(env, `${dir}/${keys[0].filename}`), {
         headers: ghHeaders(env),
       });
-      if (check.status === 200) return json({ error: "Already submitted" }, 409, cors);
-      if (check.status !== 404) throw new Error(`dedup check ${check.status}`);
+      if (check.status === 404) return json({ error: "No response to edit" }, 404, cors);
+      if (!check.ok) throw new Error(`edit lookup ${check.status}`);
+      const meta = await check.json();
+      existingSha = meta.sha;
+      try { existingRecord = JSON.parse(base64ToUtf8(meta.content || "")); } catch { /* keep null */ }
+      keys = [keys[0]]; // never touch ip markers on edit
+    } else {
+      for (const key of keys) {
+        const check = await fetch(contentsUrl(env, `${dir}/${key.filename}`), {
+          headers: ghHeaders(env),
+        });
+        if (check.status === 200) return json({ error: "Already submitted" }, 409, cors);
+        if (check.status !== 404) throw new Error(`dedup check ${check.status}`);
+      }
     }
   } else {
+    if (isEdit) return json({ error: "Editing not available for this survey" }, 400, cors);
     keys = [{ filename: `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json` }];
   }
 
-  // --- response cap (soft limit; counts canonical records, not ip markers) ---
-  const cap = Number(survey.maxResponses) || 200;
-  const listing = await fetch(contentsUrl(env, dir), { headers: ghHeaders(env) });
-  if (listing.ok) {
-    const files = await listing.json();
-    const count = Array.isArray(files)
-      ? files.filter((f) => !f.name.startsWith("ip-")).length
-      : 0;
-    if (count >= cap) return json({ error: "Survey full" }, 429, cors);
-  } else if (listing.status !== 404) {
-    throw new Error(`cap check ${listing.status}`);
+  // --- response cap (soft limit; edits don't add a response) ---
+  if (!isEdit) {
+    const cap = Number(survey.maxResponses) || 200;
+    const listing = await fetch(contentsUrl(env, dir), { headers: ghHeaders(env) });
+    if (listing.ok) {
+      const files = await listing.json();
+      const count = Array.isArray(files)
+        ? files.filter((f) => !f.name.startsWith("ip-")).length
+        : 0;
+      if (count >= cap) return json({ error: "Survey full" }, 429, cors);
+    } else if (listing.status !== 404) {
+      throw new Error(`cap check ${listing.status}`);
+    }
   }
 
   // --- write response ---
@@ -400,25 +461,30 @@ async function handleSubmit(request, env, cors) {
   const record = {
     surveyId,
     responseId,
-    submittedAt: new Date().toISOString(),
+    submittedAt: isEdit && existingRecord ? existingRecord.submittedAt : new Date().toISOString(),
     name, // null for anonymous surveys
     answers,
     // Salted hashes only — no raw IP or browser token is ever stored.
     dedup: mode === "off" ? null : { mode, key: responseId },
   };
+  if (isEdit) record.editedAt = new Date().toISOString();
   const encoded = utf8ToBase64(JSON.stringify(record, null, 2));
 
-  async function putFile(filename, content, message) {
+  async function putFile(filename, content, message, sha) {
+    const payload = { message, content, branch: "main" };
+    if (sha) payload.sha = sha; // update existing file
     return fetch(contentsUrl(env, `${dir}/${filename}`), {
       method: "PUT",
       headers: { ...ghHeaders(env), "Content-Type": "application/json" },
-      body: JSON.stringify({ message, content, branch: "main" }),
+      body: JSON.stringify(payload),
     });
   }
 
   // Canonical record under the first key (browser token, or IP if no token).
-  const put = await putFile(keys[0].filename, encoded, `Response for ${surveyId}`);
-  if (put.status === 409 || put.status === 422) {
+  const put = await putFile(keys[0].filename, encoded,
+    isEdit ? `Edit response for ${surveyId}` : `Response for ${surveyId}`,
+    isEdit ? existingSha : undefined);
+  if (!isEdit && (put.status === 409 || put.status === 422)) {
     // A concurrent identical submission won the race.
     return json({ error: "Already submitted" }, 409, cors);
   }
@@ -426,7 +492,7 @@ async function handleSubmit(request, env, cors) {
 
   // Secondary IP marker so a new browser on the same IP is also blocked.
   // Prefixed "ip-" so the R reader and the cap check can skip it.
-  if (keys.length > 1) {
+  if (!isEdit && keys.length > 1) {
     const marker = await putFile(
       keys[1].filename,
       utf8ToBase64(JSON.stringify({ marker: true, responseId })),

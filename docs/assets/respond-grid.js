@@ -327,5 +327,22 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
       }
       return out;
     },
+    // Restore a prior response (edit mode): exact parts if present,
+    // otherwise full blocks for yes/maybe.
+    setFromAnswers: (a) => {
+      chosen.clear();
+      for (const b of blocks) {
+        const parts = a && a[`${b.label} (parts)`];
+        if (Array.isArray(parts) && parts.length) {
+          for (const p of parts) {
+            const ts = Date.parse(p);
+            if (b.cells.includes(ts)) chosen.add(ts);
+          }
+        } else if (a && (a[b.label] === "yes" || a[b.label] === "maybe")) {
+          for (const ts of b.cells) chosen.add(ts);
+        }
+      }
+      buildGrid(); // re-renders with chosen classes + alpha
+    },
   };
 }

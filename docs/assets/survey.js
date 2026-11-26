@@ -73,7 +73,52 @@ function fetchPopularity(id) {
     .catch(() => ({}));
 }
 
-function renderSurvey(survey, id, popularity) {
+// Fetch the visitor's own prior response (browser token in a header).
+function fetchOwnResponse(id) {
+  return fetch(`${CFG.workerUrl}/response?surveyId=${encodeURIComponent(id)}`, {
+    headers: { "X-Survey-Token": browserToken(id) },
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+}
+
+// Read-only summary of the visitor's own answers, with an Edit button.
+function showOwnResponse(survey, id, own, popularity) {
+  const card = el("div", { class: "card" },
+    el("h1", {}, survey.title || "Survey"),
+    el("p", { class: "subtitle" },
+      `You responded on ${new Date(own.submittedAt).toLocaleString()}` +
+      (own.editedAt ? ` (edited ${new Date(own.editedAt).toLocaleString()})` : "") + ".")
+  );
+  if (own.name) card.append(el("p", {}, el("strong", {}, "Name: "), own.name));
+  survey.questions.forEach((q, i) => {
+    const a = (own.answers || {})[q.id];
+    const box = el("div", { class: "question" },
+      el("div", { class: "q-label" }, `${i + 1}. ${q.label}`));
+    if (q.type === "meeting") {
+      const rows = (q.slots || []).map((slot) => {
+        const v = a && a[slot];
+        const parts = a && a[`${slot} (parts)`];
+        const detail = Array.isArray(parts) && parts.length ? ` (${parts.length * 30} min)` : "";
+        return [slot, v === "yes" || v === "maybe" ? `available${detail}` : "not available"];
+      });
+      const table = el("table", { class: "grid" },
+        el("tr", {}, el("th", {}, "Time"), el("th", {}, "Your answer")));
+      for (const r of rows) table.append(el("tr", {}, r.map((c) => el("td", {}, c))));
+      box.append(table);
+    } else {
+      const v = Array.isArray(a) ? a.join(", ") : (a ?? "");
+      box.append(el("div", {}, String(v) || el("span", { class: "hint" }, "(no answer)")));
+    }
+    card.append(box);
+  });
+  const editBtn = el("button", { class: "primary", style: "margin-top:12px" }, "Edit my response");
+  editBtn.addEventListener("click", () => renderSurvey(survey, id, popularity, own));
+  card.append(editBtn);
+  content.replaceChildren(card);
+}
+
+function renderSurvey(survey, id, popularity, existing) {
   document.title = survey.title || "Survey";
   const form = el("form", { novalidate: true });
   const card = el("div", { class: "card" },
@@ -100,8 +145,42 @@ function renderSurvey(survey, id, popularity) {
   );
   form.append(card);
 
+  // Pre-fill from the visitor's existing response when editing.
+  if (existing) {
+    const nameInput = form.elements["respondent_name"];
+    if (nameInput && existing.name) nameInput.value = existing.name;
+    for (const q of survey.questions) {
+      const a = (existing.answers || {})[q.id];
+      if (a === undefined || a === null) continue;
+      const name = `q_${q.id}`;
+      if (q.type === "text" || q.type === "longtext") {
+        form.elements[name].value = a;
+      } else if (q.type === "single" || q.type === "rating") {
+        const inp = form.querySelector(`input[name="${name}"][value="${a}"]`);
+        if (inp) inp.checked = true;
+      } else if (q.type === "multi" && Array.isArray(a)) {
+        for (const v of a) {
+          const inp = form.querySelector(`input[name="${name}"][value="${v}"]`);
+          if (inp) inp.checked = true;
+        }
+      } else if (q.type === "meeting") {
+        const box = form.querySelector(`.question[data-qid="${q.id}"]`);
+        if (box && box._respondGrid && box._respondGrid.setFromAnswers) {
+          box._respondGrid.setFromAnswers(a);
+        } else {
+          (q.slots || []).forEach((slot, i) => {
+            const v = a[slot] === "maybe" ? "yes" : a[slot];
+            const inp = form.querySelector(`input[name="${name}__${i}"][value="${v}"]`);
+            if (inp) inp.checked = true;
+          });
+        }
+      }
+    }
+  }
+
   const status = el("div", { class: "status" });
-  const submitBtn = el("button", { type: "submit", class: "primary" }, "Submit");
+  const submitBtn = el("button", { type: "submit", class: "primary" },
+    existing ? "Update my response" : "Submit");
   form.append(status, submitBtn);
 
   form.addEventListener("submit", async (ev) => {
@@ -124,11 +203,16 @@ function renderSurvey(survey, id, popularity) {
       const res = await fetch(`${CFG.workerUrl}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ surveyId: id, token: browserToken(id), name: respondentName, answers }),
+        body: JSON.stringify({
+          surveyId: id, token: browserToken(id), name: respondentName, answers,
+          ...(existing ? { edit: true } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        showMessage("Thank you!", survey.thankYou || "Your response has been recorded.");
+        showMessage(existing ? "Updated!" : "Thank you!",
+          existing ? "Your response has been updated."
+                   : (survey.thankYou || "Your response has been recorded."));
       } else if (res.status === 409) {
         showMessage("Already submitted", "Our records show a response from you for this survey. Each person can respond once.");
       } else if (res.status === 410) {
@@ -166,8 +250,12 @@ function renderSurvey(survey, id, popularity) {
       showMessage("Survey closed", "This survey is no longer accepting responses.");
       return;
     }
-    const popularity = await popPromise;
-    renderSurvey(survey, id, popularity);
+    const [popularity, own] = await Promise.all([popPromise, fetchOwnResponse(id)]);
+    if (own && own.answers && survey.dedup !== "off") {
+      showOwnResponse(survey, id, own, popularity);
+    } else {
+      renderSurvey(survey, id, popularity);
+    }
   } catch (err) {
     showMessage("Could not load survey", `Something went wrong (${err.message}). Please try again later.`);
   }
