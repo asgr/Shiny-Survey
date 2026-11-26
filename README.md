@@ -18,11 +18,30 @@ You ──results page / R script──────▶ Private repo (your token,
   blocks duplicates, enforces a response cap, and writes to the private repo
   using a token stored as a server-side secret. Respondents never see a token.
 
-## One-time setup (~15 minutes)
+## Setting up with an AI assistant (recommended)
 
-> Setting this up with an AI assistant? Point it at [AGENTS.md](AGENTS.md) —
-> it contains a complete deployment runbook, including the steps a human
-> must do in the GitHub/Cloudflare dashboards.
+Open this repo in an AI coding assistant (Claude Code, Posit Assistant,
+Cursor, Copilot, …) and paste this prompt:
+
+> Read AGENTS.md in this repository fully and deploy this survey system
+> for me as a NEW user. Do not reuse any names, URLs, or values from the
+> repo's history or examples — they belong to the original author.
+> Start by asking me the personalization questions listed in AGENTS.md
+> (GitHub username, repo names, Cloudflare account, Worker name, timezone).
+> Then follow the staged runbook: do the [AI] steps yourself, and for each
+> [HUMAN] step give me exact click-by-click instructions and wait for me to
+> confirm before continuing. Never ask me to paste tokens into the chat —
+> I will enter them only into the GitHub/Cloudflare dashboards and the
+> designer page. Verify each stage (as described in AGENTS.md) before
+> moving to the next, run the end-to-end tests with a temporary survey,
+> and clean up the test data afterwards. Explain any propagation delays
+> rather than treating them as bugs.
+
+The assistant will need permission to run shell commands (git, curl,
+python3) and edit files in the repo. You will need a GitHub account and a
+free Cloudflare account; everything else is guided.
+
+## Manual one-time setup (~15 minutes)
 
 ### 1. Repos
 
