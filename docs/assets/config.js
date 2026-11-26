@@ -8,5 +8,5 @@ window.SURVEY_CONFIG = {
   privateRepo: "survey-responses",
 
   // URL of your deployed Cloudflare Worker (no trailing slash)
-  workerUrl: "https://asgr-survey.waves-9b7.workers.dev",
+  workerUrl: "https://asgr-survey.zbb9v8454s.workers.dev",
 };
