@@ -46,6 +46,7 @@ function renderQuestion(q, index, opts = {}) {
       const rg = createRespondentGrid(q, opts.refDate, null, {
         readOnly: !!opts.readOnly,
         popularity: opts.popularity || null,
+        viewLabel: opts.viewLabel,
       });
       if (rg) {
         box.append(rg.element);

@@ -101,7 +101,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const creatorZone = q.tz;
   const hint = el("div", { class: "hint" },
     readOnly
-      ? "Preview: this is what respondents will see and paint."
+      ? (opts.viewLabel || "Preview: this is what respondents will see and paint.")
       : "Click a highlighted cell to mark that 30 minutes as available (click again to deselect), or drag a box across several cells. Any painted time in a window counts as available.");
   const tzSel = zoneSelect(viewZone, (z) => { viewZone = z; buildGrid(); });
   const tzRow = el("div", { class: "row", style: "margin:6px 0" },

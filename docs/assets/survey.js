@@ -82,49 +82,19 @@ function fetchOwnResponse(id) {
     .catch(() => null);
 }
 
-// Read-only summary of the visitor's own answers, with an Edit button.
-function showOwnResponse(survey, id, own, popularity) {
-  const card = el("div", { class: "card" },
-    el("h1", {}, survey.title || "Survey"),
-    el("p", { class: "subtitle" },
-      `You responded on ${new Date(own.submittedAt).toLocaleString()}` +
-      (own.editedAt ? ` (edited ${new Date(own.editedAt).toLocaleString()})` : "") + ".")
-  );
-  if (own.name) card.append(el("p", {}, el("strong", {}, "Name: "), own.name));
-  survey.questions.forEach((q, i) => {
-    const a = (own.answers || {})[q.id];
-    const box = el("div", { class: "question" },
-      el("div", { class: "q-label" }, `${i + 1}. ${q.label}`));
-    if (q.type === "meeting") {
-      const rows = (q.slots || []).map((slot) => {
-        const v = a && a[slot];
-        const parts = a && a[`${slot} (parts)`];
-        const detail = Array.isArray(parts) && parts.length ? ` (${parts.length * 30} min)` : "";
-        return [slot, v === "yes" || v === "maybe" ? `available${detail}` : "not available"];
-      });
-      const table = el("table", { class: "grid" },
-        el("tr", {}, el("th", {}, "Time"), el("th", {}, "Your answer")));
-      for (const r of rows) table.append(el("tr", {}, r.map((c) => el("td", {}, c))));
-      box.append(table);
-    } else {
-      const v = Array.isArray(a) ? a.join(", ") : (a ?? "");
-      box.append(el("div", {}, String(v) || el("span", { class: "hint" }, "(no answer)")));
-    }
-    card.append(box);
-  });
-  const editBtn = el("button", { class: "primary", style: "margin-top:12px" }, "Edit my response");
-  editBtn.addEventListener("click", () => renderSurvey(survey, id, popularity, own));
-  card.append(editBtn);
-  content.replaceChildren(card);
-}
-
-function renderSurvey(survey, id, popularity, existing) {
+function renderSurvey(survey, id, popularity, existing, viewOnly) {
   document.title = survey.title || "Survey";
   const form = el("form", { novalidate: true });
   const card = el("div", { class: "card" },
     el("h1", {}, survey.title || "Survey"),
     survey.description ? el("p", { class: "subtitle" }, survey.description) : null
   );
+  if (viewOnly && existing) {
+    card.append(el("p", { class: "status ok show" },
+      `You responded on ${new Date(existing.submittedAt).toLocaleString()}` +
+      (existing.editedAt ? ` (edited ${new Date(existing.editedAt).toLocaleString()})` : "") +
+      ". Your answers are shown below."));
+  }
 
   if (survey.collectName) {
     card.append(
@@ -137,7 +107,8 @@ function renderSurvey(survey, id, popularity, existing) {
   const refDate = survey.createdAt ? new Date(survey.createdAt) : new Date();
   survey.questions.forEach((q, i) =>
     card.append(renderQuestion(q, i, {
-      grid: true, refDate,
+      grid: true, refDate, readOnly: !!viewOnly,
+      viewLabel: viewOnly ? "Green cells are the times you selected." : undefined,
       popularity: popularity && popularity.counts && popularity.counts[q.id]
         ? { total: popularity.total, counts: popularity.counts[q.id] }
         : null,
@@ -181,6 +152,16 @@ function renderSurvey(survey, id, popularity, existing) {
   const status = el("div", { class: "status" });
   const submitBtn = el("button", { type: "submit", class: "primary" },
     existing ? "Update my response" : "Submit");
+
+  if (viewOnly) {
+    // Freeze all inputs; the grid is already readOnly (no painting).
+    form.querySelectorAll("input, textarea, select").forEach((inp) => (inp.disabled = true));
+    const editBtn = el("button", { type: "button", class: "primary" }, "Edit my response");
+    editBtn.addEventListener("click", () => renderSurvey(survey, id, popularity, existing, false));
+    form.append(editBtn);
+    content.replaceChildren(form);
+    return;
+  }
   form.append(status, submitBtn);
 
   form.addEventListener("submit", async (ev) => {
@@ -252,7 +233,7 @@ function renderSurvey(survey, id, popularity, existing) {
     }
     const [popularity, own] = await Promise.all([popPromise, fetchOwnResponse(id)]);
     if (own && own.answers && survey.dedup !== "off") {
-      showOwnResponse(survey, id, own, popularity);
+      renderSurvey(survey, id, popularity, own, true); // view as entered
     } else {
       renderSurvey(survey, id, popularity);
     }
