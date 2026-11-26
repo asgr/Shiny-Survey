@@ -20,6 +20,10 @@ You ──results page / R script──────▶ Private repo (your token,
 
 ## One-time setup (~15 minutes)
 
+> Setting this up with an AI assistant? Point it at [AGENTS.md](AGENTS.md) —
+> it contains a complete deployment runbook, including the steps a human
+> must do in the GitHub/Cloudflare dashboards.
+
 ### 1. Repos
 
 1. Push this project to a **public** GitHub repo (Pages is free only for public
@@ -80,28 +84,39 @@ commit and push.
 1. Open `https://YOUR_USERNAME.github.io/Shiny-Survey/` (the designer).
 2. Paste your **designer token** once — it is stored only in your browser.
 3. Set title, anonymity (name field on/off), duplicate prevention, and cap.
-4. Add questions: short/long text, single/multiple choice, 1–5 rating, or a
-   **meeting grid** — a when2meet-style week grid in 30-minute windows.
-   Drag a rectangle to pick candidate times (adjacent cells merge into one
-   time range); click a selected cell to deselect it. Set the **timezone**
-   the times are expressed in (defaults to your local zone). The live
-   preview shows exactly what respondents will see.
+4. Add questions: short/long text (per-question character limits, defaults
+   140 / 5000), single/multiple choice, 1–5 rating, or a **meeting grid** —
+   a when2meet-style grid in 30-minute windows spanning up to 28 days
+   (wide grids scroll horizontally). Drag a rectangle to pick candidate
+   times (adjacent cells merge into one time range); click a selected cell
+   to deselect it. Set the **timezone** the times are expressed in
+   (defaults to your local zone). Choose how respondents see the question:
+   the heatmap **grid**, or a **simple list** (available / not per window —
+   better for few windows spread over many days). The live preview shows
+   exactly what respondents will see, full width.
 5. **Publish survey** and share the generated link
    (`survey.html?id=...`). New surveys work within seconds; *edits* to an
    existing survey can take up to ~5 minutes to reach respondents (GitHub
    caches definition files server-side). Edits are not live until you
    click Publish.
-6. Later: **Edit** to change questions, **Open / close** to stop responses.
+6. Later: **Edit** to change questions, **Open / close** to stop responses
+   (toggles also take up to ~5 minutes to propagate), **Delete** to remove
+   a survey (definition only — collected responses stay in the private
+   repo; delete them there separately if wanted). The survey list shows
+   each survey's open/closed state and response count.
    Note: changing questions after responses exist can make old answers harder
    to interpret — prefer closing and creating a new survey instead.
 
 ### What respondents see (meeting grids)
 
-- Candidate times appear as highlighted blocks on a week grid, in the
-  respondent's own timezone (selectable; the organizer's zone is noted).
-- **Click a block** to mark the whole window available; **drag** across
-  30-minute cells for partial availability. Availability is binary: any
-  painted time in a window counts as available.
+- Candidate times appear as highlighted cells on a week grid, in the
+  respondent's own timezone (selectable: local, UTC/GMT, fixed offsets
+  -12..+14, then named zones; the organizer's zone is noted).
+- **Click a cell** to toggle that single 30-minute window; **drag a box**
+  to paint several cells at once (dragging from a selected cell erases).
+  Availability is binary: any painted time in a window counts as available.
+- With the **list** display option, respondents instead see each time
+  window as a row with available / not-available choices.
 - Once others have responded, cells are **shaded by popularity** (stronger
   blue = more people available), with the total respondent count and
   min/max availability shown above the grid and exact counts on hover.
