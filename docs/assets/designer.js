@@ -237,13 +237,20 @@ async function refreshList() {
       );
       row.append(title, actions);
       items.push(row);
-      // Fill in title/state asynchronously.
-      getSurveyFile(id, token).then((f) => {
-        if (!f) return;
-        const s = f.survey;
-        title.replaceChildren(el("strong", {}, s.title || id),
-          el("span", { class: "hint" }, `  (${id}, ${s.open === false ? "closed" : "open"})`));
-      }).catch(() => {});
+      // Fill in title/state and response count asynchronously (in parallel).
+      Promise.all([
+        getSurveyFile(id, token).catch(() => null),
+        fetch(`${CFG.workerUrl}/popularity?surveyId=${encodeURIComponent(id)}`)
+          .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]).then(([f, pop]) => {
+        const s = f && f.survey;
+        const state = s ? (s.open === false ? "closed" : "open") : "?";
+        const count = pop && typeof pop.total === "number"
+          ? `, ${pop.total} response${pop.total === 1 ? "" : "s"}`
+          : "";
+        title.replaceChildren(el("strong", {}, (s && s.title) || id),
+          el("span", { class: "hint" }, `  (${id}, ${state}${count})`));
+      });
     }
     box.replaceChildren(...items);
   } catch (err) {
