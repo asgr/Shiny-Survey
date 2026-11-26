@@ -207,7 +207,8 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
     layout = { rowMin, rowMax, rowsPerDay, dates, cellAt };
 
     gridEl = el("div", { class: "tg-grid rg-grid" });
-    gridEl.style.gridTemplateColumns = `56px repeat(${dates.length}, 1fr)`;
+    const colW = dates.length > 10 ? "minmax(64px, 1fr)" : "1fr";
+    gridEl.style.gridTemplateColumns = `56px repeat(${dates.length}, ${colW})`;
     gridEl.append(el("div", { class: "tg-corner" }));
     for (const iso of dates) {
       const d = tgParseISO(iso);

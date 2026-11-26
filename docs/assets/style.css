@@ -91,8 +91,11 @@ table.grid input[type="radio"] { width: auto; }
 .status.error { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
 .status.ok { background: #f0fdf4; color: var(--ok); border: 1px solid #bbf7d0; }
 
-.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+.title-row { align-items: flex-start; margin-bottom: 16px; }
+.token-box { max-width: 420px; min-width: 280px; }
+.token-box input { font-size: 0.85rem; }
+.token-box .hint { font-size: 0.75rem; }
+@media (max-width: 700px) { .title-row { flex-direction: column; } .token-box { max-width: none; width: 100%; } }
 
 .survey-item { padding: 10px 0; border-top: 1px solid var(--line); }
 .survey-item:first-of-type { border-top: none; }
@@ -109,13 +112,16 @@ code.link { word-break: break-all; font-size: 0.85rem; background: var(--bg); pa
   display: grid;
   border: 1px solid var(--line);
   border-radius: 6px;
-  overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none; /* let pointer events paint instead of scrolling */
   max-width: 100%;
   overflow-x: auto;
 }
+/* sticky time column + header when scrolling wide grids */
+.tg-time, .tg-corner { position: sticky; left: 0; z-index: 1; }
+.tg-head, .tg-corner { position: sticky; top: 0; z-index: 1; }
+.tg-corner { z-index: 2; }
 .tg-corner, .tg-head, .tg-time {
   background: var(--bg);
   font-size: 0.75rem;

@@ -162,7 +162,7 @@ function createTimeGridEditor(q, onChange) {
 
   // --- controls ---
   const dateInput = el("input", { type: "date", value: grid.startDate });
-  const daysInput = el("input", { type: "number", min: 1, max: 14, value: grid.days, style: "width:70px" });
+  const daysInput = el("input", { type: "number", min: 1, max: 28, value: grid.days, style: "width:70px" });
   const halfHourOpts = (selected) => {
     const opts = [];
     for (let m = 0; m <= 24 * 60; m += TG_STEP) {
@@ -177,7 +177,7 @@ function createTimeGridEditor(q, onChange) {
 
   function controlsChanged() {
     grid.startDate = dateInput.value || grid.startDate;
-    grid.days = Math.max(1, Math.min(14, Number(daysInput.value) || 5));
+    grid.days = Math.max(1, Math.min(28, Number(daysInput.value) || 5));
     grid.startMin = Number(startSel.value);
     grid.endMin = Number(endSel.value);
     if (grid.endMin <= grid.startMin) {
@@ -224,7 +224,10 @@ function createTimeGridEditor(q, onChange) {
       datesISO.push(tgDateISO(d));
     }
     gridEl = el("div", { class: "tg-grid" });
-    gridEl.style.gridTemplateColumns = `56px repeat(${grid.days}, 1fr)`;
+    // Wide grids (up to 4 weeks) keep a minimum column width and scroll
+    // horizontally instead of squeezing columns unreadably thin.
+    const colW = grid.days > 10 ? "minmax(64px, 1fr)" : "1fr";
+    gridEl.style.gridTemplateColumns = `56px repeat(${grid.days}, ${colW})`;
 
     gridEl.append(el("div", { class: "tg-corner" }));
     for (const iso of datesISO) {

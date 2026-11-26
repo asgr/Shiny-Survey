@@ -42,7 +42,7 @@ function renderQuestion(q, index, opts = {}) {
     }
     box.append(row, el("div", { class: "hint" }, "1 = lowest, 5 = highest"));
   } else if (q.type === "meeting") {
-    if (opts.grid && typeof createRespondentGrid === "function") {
+    if (opts.grid && q.display !== "list" && typeof createRespondentGrid === "function") {
       const rg = createRespondentGrid(q, opts.refDate, null, {
         readOnly: !!opts.readOnly,
         popularity: opts.popularity || null,
@@ -73,6 +73,16 @@ function renderQuestion(q, index, opts = {}) {
       );
     });
     box.append(table);
+    // List mode on the respondent page: default all windows to "no" so
+    // untouched rows mean not available (matches the grid's semantics).
+    if (opts.grid && q.display === "list") {
+      (q.slots || []).forEach((slot, i) => {
+        const noInput = box.querySelector(`input[name="${name}__${i}"][value="no"]`);
+        if (noInput) noInput.checked = true;
+      });
+      box.append(el("div", { class: "hint" },
+        "Mark each window available or not. Untouched windows count as not available."));
+    }
   }
   return box;
 }

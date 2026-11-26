@@ -98,10 +98,17 @@ function questionEditor(q, i) {
   }
 
   if (q.type === "meeting") {
+    const dispSel = el("select", { style: "width:auto",
+      onchange: (e) => { q.display = e.target.value; drawPreview(); } },
+      el("option", { value: "grid" }, "Heatmap grid (when2meet style)"),
+      el("option", { value: "list" }, "Simple list (available / not per window)")
+    );
+    dispSel.value = q.display || "grid";
     card.append(
+      el("label", { class: "tg-ctl", style: "margin-top:8px" }, "Respondents see", dispSel),
       el("div", { class: "hint", style: "margin-top:8px" },
         "Drag across the grid to pick candidate times (respondents mark which times they're available). " +
-        "Adjacent cells merge into one time range."),
+        "Adjacent cells merge into one time range. The list view suits few windows spread over many days."),
       createTimeGridEditor(q, drawPreview)
     );
   }
@@ -128,7 +135,7 @@ function addQuestion(type) {
   if (type === "text") q.maxChars = 140;
   if (type === "longtext") q.maxChars = 5000;
   if (type === "single" || type === "multi") q.options = [];
-  if (type === "meeting") { q.slots = []; q.choices = ["yes", "no"]; }
+  if (type === "meeting") { q.slots = []; q.choices = ["yes", "no"]; q.display = "grid"; }
   survey.questions.push(q);
   redraw();
 }
