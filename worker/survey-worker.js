@@ -41,6 +41,20 @@ export default {
       return json({ ok: true, service: "survey-worker" }, 200, cors);
     }
 
+    // Cheap response count for the designer list: one directory listing,
+    // no per-file reads. Public-safe (a bare integer).
+    if (request.method === "GET" && url.pathname === "/count") {
+      if (origin !== "*" && request.headers.get("Origin") !== origin) {
+        return json({ error: "Forbidden origin" }, 403, cors);
+      }
+      try {
+        return await handleCount(url, env, cors);
+      } catch (err) {
+        console.error("count failed:", err && err.message);
+        return json({ error: "Unavailable" }, 500, cors);
+      }
+    }
+
     // Aggregate-only popularity for the respondent grid's shading.
     // Returns counts per 30-min cell — never names, answers, or ids.
     if (request.method === "GET" && url.pathname === "/popularity") {
@@ -203,6 +217,31 @@ function contentsUrl(env, path) {
 // the GitHub API (each call reads every response file for the survey).
 const popularityCache = new Map(); // surveyId -> {data, fetchedAt}
 const POPULARITY_TTL_MS = 60 * 1000;
+const countCache = new Map(); // surveyId -> {total, fetchedAt}
+
+// Bare response count from ONE directory listing (no per-file reads).
+async function handleCount(url, env, cors) {
+  const surveyId = String(url.searchParams.get("surveyId") || "");
+  if (!/^[a-zA-Z0-9_-]{4,40}$/.test(surveyId)) return json({ error: "Invalid survey id" }, 400, cors);
+  const cached = countCache.get(surveyId);
+  if (cached && Date.now() - cached.fetchedAt < POPULARITY_TTL_MS) {
+    return json({ total: cached.total }, 200, cors);
+  }
+  // A fresh popularity result already knows the total.
+  const pop = popularityCache.get(surveyId);
+  if (pop && Date.now() - pop.fetchedAt < POPULARITY_TTL_MS) {
+    return json({ total: pop.data.total }, 200, cors);
+  }
+  const listing = await fetch(contentsUrl(env, `responses/${surveyId}`), { headers: ghHeaders(env) });
+  let total = 0;
+  if (listing.ok) {
+    total = (await listing.json()).filter((f) => f.type === "file" && !f.name.startsWith("ip-")).length;
+  } else if (listing.status !== 404) {
+    throw new Error(`listing ${listing.status}`);
+  }
+  countCache.set(surveyId, { total, fetchedAt: Date.now() });
+  return json({ total }, 200, cors);
+}
 
 async function handlePopularity(url, env, cors) {
   const surveyId = String(url.searchParams.get("surveyId") || "");
@@ -241,14 +280,21 @@ async function handlePopularity(url, env, cors) {
   let total = 0;
   if (listing.ok) {
     const files = (await listing.json()).filter((f) => f.type === "file" && !f.name.startsWith("ip-"));
-    for (const f of files) {
-      // Directory listings may omit `path`; construct it from the name.
-      const filePath = f.path || `${dir}/${f.name}`;
-      const item = await fetch(contentsUrl(env, filePath), { headers: ghHeaders(env) });
-      if (!item.ok) continue;
-      const meta = await item.json();
-      let rec;
-      try { rec = JSON.parse(base64ToUtf8(meta.content || "")); } catch { continue; }
+    // Read files in parallel batches (serial reads cost ~0.1s each).
+    const records = [];
+    const BATCH = 8;
+    for (let i = 0; i < files.length; i += BATCH) {
+      const metas = await Promise.all(files.slice(i, i + BATCH).map((f) => {
+        const filePath = f.path || `${dir}/${f.name}`;
+        return fetch(contentsUrl(env, filePath), { headers: ghHeaders(env) })
+          .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      }));
+      for (const meta of metas) {
+        if (!meta) continue;
+        try { records.push(JSON.parse(base64ToUtf8(meta.content || ""))); } catch { /* skip */ }
+      }
+    }
+    for (const rec of records) {
       total++;
       for (const q of meetingQs) {
         const a = (rec.answers || {})[q.id] || {};
@@ -392,5 +438,6 @@ async function handleSubmit(request, env, cors) {
   }
 
   popularityCache.delete(surveyId);
+  countCache.delete(surveyId);
   return json({ ok: true }, 200, cors);
 }

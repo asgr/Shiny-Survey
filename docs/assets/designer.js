@@ -240,7 +240,8 @@ async function refreshList() {
       // Fill in title/state and response count asynchronously (in parallel).
       Promise.all([
         getSurveyFile(id, token).catch(() => null),
-        fetch(`${CFG.workerUrl}/popularity?surveyId=${encodeURIComponent(id)}`)
+        // /count is one cheap listing call; /popularity reads every file.
+        fetch(`${CFG.workerUrl}/count?surveyId=${encodeURIComponent(id)}`)
           .then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]).then(([f, pop]) => {
         const s = f && f.survey;
