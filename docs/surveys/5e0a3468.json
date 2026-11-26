@@ -1,0 +1,54 @@
+{
+  "id": "5e0a3468",
+  "title": "SWG Leads Meeting Scheduling",
+  "description": "A survey of preferences going forward.",
+  "collectName": true,
+  "dedup": "browser+ip",
+  "maxResponses": 200,
+  "open": true,
+  "createdAt": "2026-11-26T08:49:16.076Z",
+  "questions": [
+    {
+      "id": "q_2e6d19d0",
+      "type": "single",
+      "label": "How often should we meet?",
+      "required": true,
+      "options": [
+        "Once per week",
+        "Once per fortnight",
+        "Once per month",
+        "Once per quarter"
+      ]
+    },
+    {
+      "id": "q_52b3e7e1",
+      "type": "single",
+      "label": "Preferred meeting length?",
+      "required": true,
+      "options": [
+        "30 minutes",
+        "1 hour",
+        "2 hours"
+      ]
+    },
+    {
+      "id": "q_595d22da",
+      "type": "multi",
+      "label": "Regular agenda items",
+      "required": true,
+      "options": [
+        "WAVES data progress on 4MOST",
+        "What's going on with WAVES/4MOST",
+        "Updates from each SWG (bottom up)",
+        "Other (write something below)"
+      ]
+    },
+    {
+      "id": "q_5c91b720",
+      "type": "text",
+      "label": "If Other for Q3, what?",
+      "required": false,
+      "maxChars": 140
+    }
+  ]
+}
