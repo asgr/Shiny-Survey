@@ -238,25 +238,62 @@ async function refreshList() {
       row.append(title, actions);
       items.push(row);
       // Fill in title/state and response count asynchronously (in parallel).
+      const meta = el("span", { class: "hint" }, `  (${id})`);
+      const strong = el("strong", {}, id);
+      title.replaceChildren(strong, meta);
+      row._strong = strong;
+      row._surveyId = id;
+      row._meta = meta;
+      row._title = null;
+      row._state = null;
       Promise.all([
         getSurveyFile(id, token).catch(() => null),
-        // /count is one cheap listing call; /popularity reads every file.
-        fetch(`${CFG.workerUrl}/count?surveyId=${encodeURIComponent(id)}`)
-          .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetchCount(id),
       ]).then(([f, pop]) => {
         const s = f && f.survey;
-        const state = s ? (s.open === false ? "closed" : "open") : "?";
-        const count = pop && typeof pop.total === "number"
-          ? `, ${pop.total} response${pop.total === 1 ? "" : "s"}`
-          : "";
-        title.replaceChildren(el("strong", {}, (s && s.title) || id),
-          el("span", { class: "hint" }, `  (${id}, ${state}${count})`));
+        row._title = (s && s.title) || id;
+        row._state = s ? (s.open === false ? "closed" : "open") : "?";
+        row._count = pop && typeof pop.total === "number" ? pop.total : null;
+        renderRowMeta(row);
       });
     }
     box.replaceChildren(...items);
+    startCountPolling();
   } catch (err) {
     box.replaceChildren(el("p", { class: "hint" }, `Could not list surveys: ${err.message}`));
   }
+}
+
+function fetchCount(id) {
+  // /count is one cheap listing call; /popularity reads every file.
+  return fetch(`${CFG.workerUrl}/count?surveyId=${encodeURIComponent(id)}`)
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+}
+
+function renderRowMeta(row) {
+  const count = typeof row._count === "number"
+    ? `, ${row._count} response${row._count === 1 ? "" : "s"}`
+    : "";
+  row._meta.textContent = `  (${row._surveyId}, ${row._state || "?"}${count})`;
+  if (row._title) row._strong.textContent = row._title;
+}
+
+// Refresh counts in place every 60s while the tab is visible. Each poll is
+// one Worker request per survey (usually a Worker-cache hit, no GitHub call).
+let countPollTimer = null;
+function startCountPolling() {
+  if (countPollTimer) return;
+  countPollTimer = setInterval(async () => {
+    if (document.visibilityState === "hidden") return;
+    const rows = [...$("survey-list").children].filter((r) => r._surveyId);
+    await Promise.all(rows.map(async (row) => {
+      const pop = await fetchCount(row._surveyId);
+      if (pop && typeof pop.total === "number" && pop.total !== row._count) {
+        row._count = pop.total;
+        renderRowMeta(row);
+      }
+    }));
+  }, 60 * 1000);
 }
 
 async function loadSurvey(id) {
