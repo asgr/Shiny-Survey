@@ -148,6 +148,11 @@ commit and push.
   Availability is binary: any painted time in a window counts as available.
 - With the **list** display option, respondents instead see each time
   window as a row with available / not-available choices.
+- **Revisiting the link** after responding shows their own answers
+  read-only, with an "Edit my response" button (same browser required —
+  the response is keyed to a browser token; clearing browser storage or
+  switching devices loses the association). Edits update the same
+  response, keep the original submission time, and record an edit time.
 - Once others have responded, cells are **shaded by popularity** (stronger
   blue = more people available), with the total respondent count and
   min/max availability shown above the grid and exact counts on hover.
