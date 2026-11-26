@@ -6,18 +6,41 @@ function localZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+// Ordered zone list for the selector: local first, then UTC/GMT, then
+// fixed-offset zones from -12 to +14 (ascending), then all named IANA
+// zones alphabetically. Entries are {value, label}.
 function zoneList() {
   let zones;
   try { zones = Intl.supportedValuesOf("timeZone"); }
   catch (e) { zones = ["UTC"]; }
   const local = localZone();
-  const common = ["UTC", "Pacific/Auckland", "Australia/Sydney", "Australia/Perth",
-    "Asia/Tokyo", "Asia/Shanghai", "Asia/Singapore", "Asia/Kolkata",
-    "Europe/London", "Europe/Paris", "Europe/Berlin",
-    "America/New_York", "America/Chicago", "America/Denver",
-    "America/Los_Angeles", "America/Sao_Paulo"];
-  const ordered = [...new Set([local, ...common.filter((z) => zones.includes(z) || z === "UTC"), ...zones])];
-  return ordered;
+  const out = [{ value: local, label: `${local} (local)` }];
+  const seen = new Set([local]);
+  function add(value, label) {
+    if (seen.has(value)) return;
+    seen.add(value);
+    out.push({ value, label: label || value });
+  }
+  add("UTC", "UTC/GMT");
+  // Fixed offsets, ascending. IANA's Etc/GMT signs are INVERTED
+  // (Etc/GMT+5 means UTC-5), so construct the label from the real offset.
+  // Intl.supportedValuesOf omits Etc/*, but the zones are still valid —
+  // probe one to confirm support before offering the range.
+  let etcSupported = true;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: "Etc/GMT-8" }); }
+  catch (e) { etcSupported = false; }
+  if (etcSupported) {
+    for (let off = -12; off <= 14; off++) {
+      if (off === 0) continue; // covered by UTC/GMT
+      const etc = `Etc/GMT${off > 0 ? "-" : "+"}${Math.abs(off)}`;
+      add(etc, `UTC/GMT${off > 0 ? "+" : "-"}${Math.abs(off)}`);
+    }
+  }
+  for (const z of zones) {
+    if (z.startsWith("Etc/")) continue; // remaining Etc/* aliases are noise
+    add(z);
+  }
+  return out;
 }
 
 // Offset (minutes) of `zone` at instant `date`: zoneWallClock - UTC.
@@ -70,9 +93,9 @@ function zoneSelect(selected, onChange) {
   sel.setAttribute("style", "width:auto; max-width:220px");
   for (const z of zoneList()) {
     const o = document.createElement("option");
-    o.setAttribute("value", z);
-    if (z === selected) o.setAttribute("selected", "");
-    o.append(document.createTextNode(z));
+    o.setAttribute("value", z.value);
+    if (z.value === selected) o.setAttribute("selected", "");
+    o.append(document.createTextNode(z.label));
     sel.append(o);
   }
   sel.value = selected;
