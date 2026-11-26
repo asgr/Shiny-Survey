@@ -318,62 +318,96 @@ async function main() {
     ]);
     if (!survey) return showMessage("Survey not found", "Check the link.");
     document.title = `Results — ${survey.title}`;
-
-    const head = el("div", { class: "card" },
-      el("div", { class: "spread" },
-        el("h1", {}, `Results: ${survey.title}`),
-        el("a", { href: `survey.html?id=${encodeURIComponent(id)}`, class: "hint" }, "Survey link ↗")),
-      el("p", { class: "subtitle" },
-        `${responses.length} response${responses.length === 1 ? "" : "s"} · ` +
-        (survey.open === false ? "closed" : "open") +
-        ` · cap ${survey.maxResponses || 200} · viewed privately with your token`));
-
-    const cards = [head];
-    if (!responses.length) {
-      cards.push(el("div", { class: "card" }, el("p", {}, "No responses yet. Share the survey link!")));
-    }
-    const overTime = responsesOverTime(responses);
-    if (overTime) cards.push(el("div", { class: "card" }, overTime));
-    survey.questions.forEach((q, i) => {
-      const card = el("div", { class: "card" },
-        el("h2", {}, `${i + 1}. ${q.label}`));
-      if (q.type === "meeting") card.append(meetingSummary(q, responses, survey));
-      else if (q.type === "text" || q.type === "longtext") card.append(textSummary(q, responses));
-      else card.append(choiceSummary(q, responses));
-      cards.push(card);
-    });
-
-    // Respondent list (names only when collected).
-    if (responses.some((r) => r.name)) {
-      const rows = responses.map((r) => [
-        r.name || "(anonymous)",
-        new Date(r.submittedAt).toLocaleString(),
-      ]);
-      cards.push(el("div", { class: "card" },
-        el("h2", {}, "Respondents"),
-        tallyTable(rows, ["Name", "Submitted (your local time)"])));
-    }
-
-    // Export: self-contained static snapshot for sharing.
-    const anonCheck = el("input", { type: "checkbox", checked: "" });
-    const exportCard = el("div", { class: "card" },
-      el("h2", {}, "Share a snapshot"),
-      el("p", { class: "hint" },
-        "Downloads a standalone HTML file with the charts and tables baked in — " +
-        "no token, no live data, safe to share or host publicly. " +
-        "It is a snapshot: it will not update as new responses arrive."),
-      el("label", { class: "option" }, anonCheck,
-        "Anonymize names (recommended for public sharing)"),
-      el("button", {
-        class: "primary",
-        onclick: (e) => exportSnapshot(survey, responses, id, anonCheck.checked, e.target),
-      }, "Download snapshot HTML"));
-    cards.push(exportCard);
-    content.replaceChildren(...cards);
+    lastSignature = responsesSignature(responses);
+    latestResponses = responses;
+    renderResults(survey, responses, id);
+    startResultsPolling(id);
   } catch (err) {
     showMessage("Could not load results",
       `${err.message}. Your token needs Contents: read access on the private repo "${PRIVATE_REPO}".`);
   }
+}
+
+// ---------- live refresh ----------
+// Poll every 60s while the tab is visible; re-render only when the data
+// actually changed (avoids flicker and needless DOM work). Cost per poll:
+// one Worker /count call; the GitHub file reads happen only on change.
+let resultsPollTimer = null;
+let lastSignature = null;
+let latestResponses = null;
+
+function responsesSignature(responses) {
+  return responses.length + ":" +
+    (responses.length ? responses[responses.length - 1].submittedAt || "" : "");
+}
+
+function startResultsPolling(id) {
+  if (resultsPollTimer) return;
+  resultsPollTimer = setInterval(async () => {
+    if (document.visibilityState === "hidden") return;
+    try {
+      const res = await fetch(`${CFG.workerUrl}/count?surveyId=${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      const { total } = await res.json();
+      if (typeof total !== "number" || total === (latestResponses || []).length) return;
+      const responses = await fetchResponses(id);
+      const sig = responsesSignature(responses);
+      if (sig === lastSignature) { latestResponses = responses; return; }
+      // Re-render with fresh data (definition re-read too: open/closed may change).
+      const survey = await fetchSurveyDefinition(id, getToken());
+      if (survey) {
+        lastSignature = sig;
+        latestResponses = responses;
+        renderResults(survey, responses, id);
+      }
+    } catch (e) { /* transient errors: try again next tick */ }
+  }, 60 * 1000);
+}
+
+// Single rendering path shared by initial load and live refresh.
+function renderResults(survey, responses, id) {
+  const head = el("div", { class: "card" },
+    el("div", { class: "spread" },
+      el("h1", {}, `Results: ${survey.title}`),
+      el("a", { href: `survey.html?id=${encodeURIComponent(id)}`, class: "hint" }, "Survey link ↗")),
+    el("p", { class: "subtitle" },
+      `${responses.length} response${responses.length === 1 ? "" : "s"} · ` +
+      (survey.open === false ? "closed" : "open") +
+      ` · cap ${survey.maxResponses || 200} · viewed privately with your token`));
+  const cards = [head];
+  if (!responses.length) {
+    cards.push(el("div", { class: "card" }, el("p", {}, "No responses yet. Share the survey link!")));
+  }
+  const overTime = responsesOverTime(responses);
+  if (overTime) cards.push(el("div", { class: "card" }, overTime));
+  survey.questions.forEach((q, i) => {
+    const card = el("div", { class: "card" }, el("h2", {}, `${i + 1}. ${q.label}`));
+    if (q.type === "meeting") card.append(meetingSummary(q, responses, survey));
+    else if (q.type === "text" || q.type === "longtext") card.append(textSummary(q, responses));
+    else card.append(choiceSummary(q, responses));
+    cards.push(card);
+  });
+  if (responses.some((r) => r.name)) {
+    cards.push(el("div", { class: "card" },
+      el("h2", {}, "Respondents"),
+      tallyTable(responses.map((r) => [r.name || "(anonymous)", new Date(r.submittedAt).toLocaleString()]),
+        ["Name", "Submitted (your local time)"])));
+  }
+  const anonCheck = el("input", { type: "checkbox", checked: "" });
+  cards.push(el("div", { class: "card" },
+    el("h2", {}, "Share a snapshot"),
+    el("p", { class: "hint" },
+      "Downloads a standalone HTML file with the charts and tables baked in — " +
+      "no token, no live data, safe to share or host publicly. " +
+      "It is a snapshot: it will not update as new responses arrive."),
+    el("label", { class: "option" }, anonCheck, "Anonymize names (recommended for public sharing)"),
+    el("button", {
+      class: "primary",
+      onclick: (e) => exportSnapshot(survey, responses, id, anonCheck.checked, e.target),
+    }, "Download snapshot HTML")));
+  const scrollY = window.scrollY;
+  content.replaceChildren(...cards);
+  window.scrollTo(0, scrollY);
 }
 
 main();
