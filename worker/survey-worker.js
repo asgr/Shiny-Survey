@@ -107,7 +107,12 @@ export default {
 function json(obj, status, cors) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json", ...cors },
+    headers: {
+      "Content-Type": "application/json",
+      // Responses are personal/dynamic — never let intermediaries cache.
+      "Cache-Control": "no-store",
+      ...cors,
+    },
   });
 }
 
@@ -317,23 +322,30 @@ async function handlePopularity(url, env, cors) {
   const survey = await getDefinition(env, surveyId);
   if (!survey) return json({ error: "Survey not found" }, 404, cors);
 
-  // Collect the meeting questions' cell universes (ISO instant -> count).
+  // Precompute each slot's cell instants ONCE (normalized ISO strings).
+  // Full-block answers then just iterate the slot's own cells — the old
+  // per-answer filter over the whole universe was O(cells^2) per response.
   const meetingQs = (survey.questions || []).filter((q) => q.type === "meeting");
   const counts = {}; // qid -> {iso: n}
   const universe = {}; // qid -> Set of valid ISO cells
+  const slotCellMap = {}; // qid -> {slot: [iso, ...]}
   for (const q of meetingQs) {
     counts[q.id] = {};
     universe[q.id] = new Set();
+    slotCellMap[q.id] = {};
     for (const slot of q.slots || []) {
-      const cells = q.slotCells && q.slotCells[slot];
-      if (Array.isArray(cells)) {
-        for (const c of cells) universe[q.id].add(new Date(Date.parse(c)).toISOString());
+      let cells = [];
+      const stored = q.slotCells && q.slotCells[slot];
+      if (Array.isArray(stored)) {
+        cells = stored.map((c) => new Date(Date.parse(c)).toISOString());
       } else if (q.slotTimes && q.slotTimes[slot]) {
         const s = Date.parse(q.slotTimes[slot].start), e = Date.parse(q.slotTimes[slot].end);
         if (!isNaN(s) && !isNaN(e)) {
-          for (let ts = s; ts < e; ts += 30 * 60000) universe[q.id].add(new Date(ts).toISOString());
+          for (let ts = s; ts < e; ts += 30 * 60000) cells.push(new Date(ts).toISOString());
         }
       }
+      slotCellMap[q.id][slot] = cells;
+      for (const iso of cells) universe[q.id].add(iso);
     }
   }
 
@@ -365,19 +377,13 @@ async function handlePopularity(url, env, cors) {
           let instants = null;
           if (Array.isArray(parts) && parts.length) instants = parts;
           else if (a[slot] === "yes" || a[slot] === "maybe") {
-            instants = [...universe[q.id]].filter((iso) => {
-              // full-block answer: count only this slot's cells
-              const cells = q.slotCells && q.slotCells[slot];
-              if (Array.isArray(cells)) return cells.some((c) => new Date(Date.parse(c)).toISOString() === iso);
-              const t = q.slotTimes && q.slotTimes[slot];
-              if (!t) return false;
-              const ts = Date.parse(iso);
-              return ts >= Date.parse(t.start) && ts < Date.parse(t.end);
-            });
+            instants = slotCellMap[q.id][slot]; // already normalized
           }
           if (!instants) continue;
           for (const p of instants) {
-            const iso = new Date(Date.parse(p)).toISOString();
+            const ts = Date.parse(p);
+            if (isNaN(ts)) continue;
+            const iso = new Date(ts).toISOString();
             if (!universe[q.id].has(iso)) continue;
             counts[q.id][iso] = (counts[q.id][iso] || 0) + 1;
           }
@@ -449,21 +455,33 @@ async function handleSubmit(request, env, cors) {
       try { existingRecord = JSON.parse(base64ToUtf8(meta.content || "")); } catch { /* keep null */ }
       keys = [keys[0]]; // never touch ip markers on edit
     } else {
-      for (const key of keys) {
-        const check = await fetch(contentsUrl(env, `${dir}/${key.filename}`), {
-          headers: ghHeaders(env),
-        });
-        if (check.status === 200) return json({ error: "Already submitted" }, 409, cors);
-        if (check.status !== 404) throw new Error(`dedup check ${check.status}`);
+      // Dedup checks and the cap listing are independent — run them
+      // concurrently (saves 1-2 serial GitHub round-trips per submission).
+      const cap = Number(survey.maxResponses) || 200;
+      const [checks, listing] = await Promise.all([
+        Promise.all(keys.map((key) =>
+          fetch(contentsUrl(env, `${dir}/${key.filename}`), { headers: ghHeaders(env) })
+            .then((r) => r.status))),
+        fetch(contentsUrl(env, dir), { headers: ghHeaders(env) }),
+      ]);
+      for (const status of checks) {
+        if (status === 200) return json({ error: "Already submitted" }, 409, cors);
+        if (status !== 404) throw new Error(`dedup check ${status}`);
+      }
+      if (listing.ok) {
+        const files = await listing.json();
+        const count = Array.isArray(files)
+          ? files.filter((f) => !f.name.startsWith("ip-")).length
+          : 0;
+        if (count >= cap) return json({ error: "Survey full" }, 429, cors);
+      } else if (listing.status !== 404) {
+        throw new Error(`cap check ${listing.status}`);
       }
     }
   } else {
     if (isEdit) return json({ error: "Editing not available for this survey" }, 400, cors);
     keys = [{ filename: `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json` }];
-  }
-
-  // --- response cap (soft limit; edits don't add a response) ---
-  if (!isEdit) {
+    // dedup off: no dedup keys, but the cap still applies
     const cap = Number(survey.maxResponses) || 200;
     const listing = await fetch(contentsUrl(env, dir), { headers: ghHeaders(env) });
     if (listing.ok) {

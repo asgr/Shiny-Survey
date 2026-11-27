@@ -127,6 +127,7 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   const summary = el("div", { class: "hint" });
 
   let gridEl = null;
+  let allowedCells = []; // cached [{cell, ts, row, col}] — rebuilt per buildGrid
   let dragging = false;
   let anchor = null;   // {row, col} global row index / column
   let baseChosen = null;
@@ -232,6 +233,15 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
         gridEl.append(cell);
       }
     }
+    allowedCells = [];
+    for (const cell of gridEl.children) {
+      const t = cell.getAttribute && cell.getAttribute("data-ts");
+      if (t) allowedCells.push({
+        cell, ts: Number(t),
+        row: Number(cell.getAttribute("data-row")),
+        col: Number(cell.getAttribute("data-col")),
+      });
+    }
     gridBox.replaceChildren(gridEl);
     if (!readOnly) attachPaint();
 
@@ -261,20 +271,22 @@ function createRespondentGrid(q, referenceDate, onChange, opts = {}) {
   }
 
   // Rectangle selection between anchor and current cell (when2meet-style).
+  // Recomputes the selection from the drag-start snapshot, but only touches
+  // the DOM for cells whose state actually changed (pointermove fires ~60/s;
+  // repainting every cell each move was wasted work on large grids).
   function applyRect(row, col) {
     const r0 = Math.min(anchor.row, row), r1 = Math.max(anchor.row, row);
     const c0 = Math.min(anchor.col, col), c1 = Math.max(anchor.col, col);
     chosen.clear();
     baseChosen.forEach((ts) => chosen.add(ts));
-    for (const cell of gridEl.children) {
-      if (!cell.getAttribute || !cell.getAttribute("data-ts")) continue;
-      const cr = Number(cell.getAttribute("data-row"));
-      const cc = Number(cell.getAttribute("data-col"));
-      const ts = Number(cell.getAttribute("data-ts"));
+    for (const { ts, row: cr, col: cc } of allowedCells) {
       if (cr >= r0 && cr <= r1 && cc >= c0 && cc <= c1) {
         if (rectMode) chosen.add(ts); else chosen.delete(ts);
       }
-      paintCellLook(cell, ts);
+    }
+    for (const { cell, ts } of allowedCells) {
+      const want = chosen.has(ts);
+      if (want !== cell.classList.contains("chosen")) paintCellLook(cell, ts);
     }
   }
 

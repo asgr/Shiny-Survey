@@ -262,6 +262,9 @@ up to 10 minutes (GitHub Pages `max-age=600`).
 The Worker is deployed separately: paste `worker/survey-worker.js` into the
 Cloudflare dashboard whenever it changes.
 
+Run the headless test suites (macOS, no Node needed) before pushing JS
+changes: `sh tests/run.sh`.
+
 ## Project layout
 
 ```

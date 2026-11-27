@@ -145,13 +145,59 @@ Let `W=<workerUrl>`, `O=https://<user>.github.io`, raw definitions at
 - Frontend deployed: compare `shasum docs/assets/<file>` against
   `curl -s https://<user>.github.io/<publicRepo>/assets/<file> | shasum`.
 
-Headless JS testing: this repo has no Node dependency; on macOS use
-`/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc`
-with `checkSyntax()` / `checkModuleSyntax()` and small DOM/fetch stubs to
-exercise `docs/assets/*.js` and the Worker (strip `export default` →
-`const worker = {`). Stub `Request.text()` by snapshotting the body at
-creation; make directory listings include `path`; return file GETs as
-`{content: <base64>}` exactly as stored (GitHub API semantics).
+## Testing (committed, run before every commit that touches JS)
+
+```sh
+sh tests/run.sh
+```
+
+Runs 18 headless suites (~226 assertions) against the REAL source files
+using macOS's built-in JavaScriptCore — no Node needed. Covers Worker
+validation/dedup/edit/count/popularity (incl. privacy-leak checks), grid
+interaction, timezone conversion (DST edges), shading, charts, names in
+tooltips, view/edit restore, and both pollers. **All suites must pass
+before pushing.** Add a suite under `tests/worker/` or `tests/frontend/`
+and register it in `tests/run.sh` when adding features.
+
+Harness gotchas (already handled in `tests/worker/harness.js` and
+`tests/frontend/dom-stub.js`, keep them):
+- Worker runs in script mode: `export default {` → `const worker = {`.
+- Stub `Request.text()` by snapshotting the body at creation (the Worker
+  mutates parsed objects).
+- Directory listings must include `path`; file GETs return
+  `{content: <base64>, sha}` exactly as stored; PUT with `sha` updates
+  (no duplicate dir entries).
+- Survey ids must match `^[a-zA-Z0-9_-]{4,40}$` — 3-char test ids fail.
+- DOM stub nodes need `nodeType: 1` (el() checks it) and text nodes carry
+  `.text` (test walkers must read both `.text` and `.textContent`).
+- jsc has full Intl (IANA zones + DST); `Intl.supportedValuesOf` omits
+  `Etc/*` but the zones still work — tz.js probes before offering them.
+
+## Worker API surface
+
+| Endpoint | Auth | Returns | Notes |
+|---|---|---|---|
+| `GET /health` | none | `{ok:true}` | deployment probe |
+| `POST /submit` | Origin | `{ok:true}` / 4xx | validates against definition; `edit:true` updates own response (needs browser token); dedup checks + cap listing run in parallel |
+| `GET /count?surveyId=` | Origin | `{total}` | one directory listing; 60s cache; designer list + both pollers use it |
+| `GET /popularity?surveyId=` | Origin | `{total,counts:{qid:{iso:n}}}` | aggregate only; 60s cache; file reads batched 8×; slot cells precomputed once |
+| `GET /response?surveyId=` | Origin + `X-Survey-Token` header | own `{name,answers,submittedAt,editedAt}` | token never in URL; salted-hash lookup; CORS allows the header |
+
+All JSON responses send `Cache-Control: no-store`. Submit invalidates
+count+popularity caches (per-isolate; other Cloudflare edges may serve
+up to 60s stale — inherent, not a bug).
+
+## Question types (data model)
+
+`text`/`longtext` (maxChars, defaults 140/5000, hard ceiling 5000) ·
+`yesno` (options preset Yes/No, editable) · `single` (options; optional
+`dropdown:true`) · `multi` · `rating` (1–5 strings) · `number` (numeric
+JSON value, optional min/max) · `likert` (`rows` × `scale`, answers keyed
+by row label) · `meeting` (slots/labels + `slotCells` UTC instants;
+`display:"grid"|"list"`; binary yes/no + `(parts)` instants).
+Results: choice bars w/ names on hover, rating mean, number stats +
+histogram, likert stacked diverging bars + mean scores, meeting heatmap.
+R: `meeting_tally`, `cell_tally`, `likert_tally`, `number_summary`.
 
 ## Maintenance rules (for the AI)
 
@@ -190,18 +236,45 @@ creation; make directory listings include `path`; return file GETs as
    content without the owner's token (browser-side) — aggregate counts
    are the only public-derived data allowed.
 
+## Performance notes (what's already optimized — don't regress)
+
+- `boot.js` loads scripts in parallel with `async=false` (ordered exec).
+  A serial await-load chain cost ~2s extra; never reintroduce it.
+- Survey page fires definition + popularity + own-response fetches
+  together (all only need the id).
+- Results page reads response files in parallel batches of 8; polls
+  `/count` (cheap) every 60s and only re-fetches files when count changes.
+- `tz.js` caches one `Intl.DateTimeFormat` per zone (~47× faster than
+  constructing per call; grids call it per cell).
+- Worker popularity precomputes each slot's normalized cells ONCE; the
+  old per-answer universe filter was O(cells²) per response.
+- Worker submit runs dedup GETs + cap listing concurrently.
+- Respondent grid drag only repaints cells whose state changed.
+- Remaining inherent latency: AU→GitHub API ~0.2–0.3s per call; raw
+  definition cache ~5 min; Pages HTML max-age=600. The big structural
+  upgrade (if ever needed) is Cloudflare Pages + Worker-served
+  definitions — discussed, deliberately deferred.
+
 ## Known limitations (set expectations, don't "fix" silently)
 
 - IP-based dedup blocks a second person behind the same NAT (office WiFi);
   per-survey `browser` mode avoids that. Incognito+VPN can evade dedup.
 - Response cap is soft under concurrent submissions.
-- GitHub API rate limits: ~5000 req/h per token; results page batches
-  file reads 8-at-a-time; Worker caches popularity 60 s.
+- **Scale ceiling ~500 responses/survey**: GitHub contents-API directory
+  listings truncate at 1000 entries and responses use ~2 files each
+  (record + ip marker). Beyond that, counts/caps/popularity undercount.
+  Fine for the stated ~100–200 person use; document, don't silently fix.
+- View/edit on revisit requires the same browser (localStorage token);
+  dedup `off` surveys have no identity → no view/edit.
+- GitHub API rate limits: ~5000 req/h per token; Worker caches 60s.
 - Free tiers: Pages (public repos), private repos, Workers 100k req/day.
   No GitHub Actions used.
 - Old browsers without `Intl.supportedValuesOf` fall back to UTC-only
   timezone lists; `Etc/GMT±n` zones have inverted IANA signs — labels in
   `tz.js` are computed from real offsets, keep it that way.
+- Editing a live survey's structure (removing slots/options/questions)
+  orphans stored answers keyed by the old labels — counts drop silently.
+  Cosmetic edits are safe; prefer close + new survey for structural ones.
 
 ## File map
 
@@ -213,7 +286,22 @@ creation; make directory listings include `path`; return file GETs as
 | `docs/assets/boot.js`, `manifest.json` | cache-busting parallel loader |
 | `docs/assets/config.js` | deployment-specific values (edit per user) |
 | `docs/surveys/*.json` | published definitions (public) |
-| `worker/survey-worker.js` | Cloudflare Worker: /submit, /popularity, /health |
-| `R/fetch_responses.R` | fetch_responses / meeting_tally / cell_tally / CSV |
+| `worker/survey-worker.js` | Cloudflare Worker: /submit, /count, /popularity, /response, /health |
+| `R/fetch_responses.R` | fetch_responses / meeting_tally / cell_tally / likert_tally / number_summary / CSV |
 | `scripts/bump_manifest.py` | regenerate asset hashes before push |
+| `tests/run.sh` + `tests/{worker,frontend}/` | headless test suites (jsc, no Node) — run before every JS commit |
 | `examples/` | reference screenshots (not published) |
+
+## Original deployment state (asgr — for continuity, NOT for reuse)
+
+- Public repo `asgr/Shiny-Survey`, private `asgr/survey-responses`,
+  Worker `https://asgr-survey.zbb9v8454s.workers.dev` (default CF account;
+  an earlier WAVES-account Worker was migrated and deleted).
+- Live surveys: `demo20` (21 fake responses, keep for demos until user
+  says otherwise), `381a09f9` "SWG Leads Meetings", `3ea4e11b` "Just for
+  fun" (both real, user-created).
+- The user's git credential helper holds a PAT usable for API writes
+  (`gitcreds::gitcreds_get()` in R); never print it.
+- Deployed Worker is current through the new-question-types version;
+  perf-audit changes (parallel submit checks, popularity precompute,
+  no-store headers) await the next dashboard re-paste.

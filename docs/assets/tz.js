@@ -43,13 +43,25 @@ function zoneList() {
   return out;
 }
 
+// Intl.DateTimeFormat construction is comparatively expensive; grids call
+// zoneOffsetMinutes once or twice per cell, so cache one formatter per zone.
+const _dtfCache = new Map();
+function _zoneDtf(zone) {
+  let dtf = _dtfCache.get(zone);
+  if (!dtf) {
+    dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+    _dtfCache.set(zone, dtf);
+  }
+  return dtf;
+}
+
 // Offset (minutes) of `zone` at instant `date`: zoneWallClock - UTC.
 function zoneOffsetMinutes(date, zone) {
-  const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone, hourCycle: "h23",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  const dtf = _zoneDtf(zone);
   const p = {};
   for (const part of dtf.formatToParts(date)) p[part.type] = part.value;
   const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);

@@ -147,26 +147,28 @@ function renderSurvey(survey, id, popularity, existing, viewOnly) {
       const a = (existing.answers || {})[q.id];
       if (a === undefined || a === null) continue;
       const name = `q_${q.id}`;
+      // Match inputs by iterating and comparing values — option text may
+      // contain quotes/backslashes that would break a CSS attribute selector.
+      const checkByValue = (inputName, value) => {
+        for (const inp of form.querySelectorAll(`input[name="${inputName}"]`)) {
+          if (inp.value === String(value)) { inp.checked = true; return; }
+        }
+      };
       if (q.type === "text" || q.type === "longtext") {
         form.elements[name].value = a;
       } else if (q.type === "single" || q.type === "yesno" || q.type === "rating") {
         if (q.dropdown && q.type !== "rating") {
           form.elements[name].value = a;
         } else {
-          const inp = form.querySelector(`input[name="${name}"][value="${a}"]`);
-          if (inp) inp.checked = true;
+          checkByValue(name, a);
         }
       } else if (q.type === "number") {
         form.elements[name].value = a;
       } else if (q.type === "multi" && Array.isArray(a)) {
-        for (const v of a) {
-          const inp = form.querySelector(`input[name="${name}"][value="${v}"]`);
-          if (inp) inp.checked = true;
-        }
+        for (const v of a) checkByValue(name, v);
       } else if (q.type === "likert" && typeof a === "object") {
         (q.rows || []).forEach((rowLabel, i) => {
-          const inp = form.querySelector(`input[name="${name}__${i}"][value="${a[rowLabel]}"]`);
-          if (inp) inp.checked = true;
+          if (a[rowLabel] != null) checkByValue(`${name}__${i}`, a[rowLabel]);
         });
       } else if (q.type === "meeting") {
         const box = form.querySelector(`.question[data-qid="${q.id}"]`);
@@ -175,8 +177,7 @@ function renderSurvey(survey, id, popularity, existing, viewOnly) {
         } else {
           (q.slots || []).forEach((slot, i) => {
             const v = a[slot] === "maybe" ? "yes" : a[slot];
-            const inp = form.querySelector(`input[name="${name}__${i}"][value="${v}"]`);
-            if (inp) inp.checked = true;
+            if (v != null) checkByValue(`${name}__${i}`, v);
           });
         }
       }
@@ -255,7 +256,9 @@ function renderSurvey(survey, id, popularity, existing, viewOnly) {
     return;
   }
   try {
-    const popPromise = fetchPopularity(id); // fire early, in parallel
+    // All three fetches only need the id — fire them together.
+    const popPromise = fetchPopularity(id);
+    const ownPromise = fetchOwnResponse(id);
     const survey = await fetchSurveyDefinition(id);
     if (!survey) {
       showMessage("Survey not found", "This survey does not exist (or was removed). Check the link with the person who shared it.");
@@ -265,7 +268,7 @@ function renderSurvey(survey, id, popularity, existing, viewOnly) {
       showMessage("Survey closed", "This survey is no longer accepting responses.");
       return;
     }
-    const [popularity, own] = await Promise.all([popPromise, fetchOwnResponse(id)]);
+    const [popularity, own] = await Promise.all([popPromise, ownPromise]);
     if (own && own.answers && survey.dedup !== "off") {
       renderSurvey(survey, id, popularity, own, true); // view as entered
     } else {
