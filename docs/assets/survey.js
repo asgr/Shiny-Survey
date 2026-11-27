@@ -32,14 +32,37 @@ function collectAnswers(survey, form) {
       const v = form.elements[name].value.trim();
       answers[q.id] = v;
       if (q.required && !v) missing.push(q.label);
-    } else if (q.type === "single" || q.type === "rating") {
-      const checked = form.querySelector(`input[name="${name}"]:checked`);
-      answers[q.id] = checked ? checked.value : null;
-      if (q.required && !checked) missing.push(q.label);
+    } else if (q.type === "single" || q.type === "yesno" || q.type === "rating") {
+      let v = null;
+      if (q.dropdown && q.type !== "rating") {
+        v = form.elements[name].value || null;
+      } else {
+        const checked = form.querySelector(`input[name="${name}"]:checked`);
+        v = checked ? checked.value : null;
+      }
+      answers[q.id] = v;
+      if (q.required && !v) missing.push(q.label);
     } else if (q.type === "multi") {
       const vals = [...form.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
       answers[q.id] = vals;
       if (q.required && vals.length === 0) missing.push(q.label);
+    } else if (q.type === "number") {
+      const raw = form.elements[name].value.trim();
+      const v = raw === "" ? null : Number(raw);
+      answers[q.id] = v;
+      if (q.required && v === null) missing.push(q.label);
+      else if (v !== null && (isNaN(v) ||
+               (q.min != null && v < q.min) || (q.max != null && v > q.max))) {
+        missing.push(`${q.label} (out of range)`);
+      }
+    } else if (q.type === "likert") {
+      const grid = {};
+      (q.rows || []).forEach((rowLabel, i) => {
+        const checked = form.querySelector(`input[name="${name}__${i}"]:checked`);
+        grid[rowLabel] = checked ? checked.value : null;
+      });
+      answers[q.id] = grid;
+      if (q.required && Object.values(grid).some((v) => v === null)) missing.push(q.label);
     } else if (q.type === "meeting") {
       const box = form.querySelector(`.question[data-qid="${q.id}"]`);
       if (box && box._respondGrid) {
@@ -126,14 +149,25 @@ function renderSurvey(survey, id, popularity, existing, viewOnly) {
       const name = `q_${q.id}`;
       if (q.type === "text" || q.type === "longtext") {
         form.elements[name].value = a;
-      } else if (q.type === "single" || q.type === "rating") {
-        const inp = form.querySelector(`input[name="${name}"][value="${a}"]`);
-        if (inp) inp.checked = true;
+      } else if (q.type === "single" || q.type === "yesno" || q.type === "rating") {
+        if (q.dropdown && q.type !== "rating") {
+          form.elements[name].value = a;
+        } else {
+          const inp = form.querySelector(`input[name="${name}"][value="${a}"]`);
+          if (inp) inp.checked = true;
+        }
+      } else if (q.type === "number") {
+        form.elements[name].value = a;
       } else if (q.type === "multi" && Array.isArray(a)) {
         for (const v of a) {
           const inp = form.querySelector(`input[name="${name}"][value="${v}"]`);
           if (inp) inp.checked = true;
         }
+      } else if (q.type === "likert" && typeof a === "object") {
+        (q.rows || []).forEach((rowLabel, i) => {
+          const inp = form.querySelector(`input[name="${name}__${i}"][value="${a[rowLabel]}"]`);
+          if (inp) inp.checked = true;
+        });
       } else if (q.type === "meeting") {
         const box = form.querySelector(`.question[data-qid="${q.id}"]`);
         if (box && box._respondGrid && box._respondGrid.setFromAnswers) {

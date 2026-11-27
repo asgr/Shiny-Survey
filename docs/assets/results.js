@@ -57,7 +57,9 @@ function tallyTable(rows, headers) {
 function choiceSummary(q, responses) {
   const counts = {};
   const who = {}; // option -> respondent names (for bar tooltips)
-  const opts = q.type === "rating" ? ["1", "2", "3", "4", "5"] : (q.options || []);
+  const opts = q.type === "rating" ? ["1", "2", "3", "4", "5"]
+    : q.type === "yesno" ? (q.options && q.options.length ? q.options : ["Yes", "No"])
+    : (q.options || []);
   for (const o of opts) { counts[o] = 0; who[o] = []; }
   let unanswered = 0;
   const unansweredNames = [];
@@ -86,6 +88,80 @@ function choiceSummary(q, responses) {
       ? el("p", { class: "hint" }, `Mean rating: ${mean.toFixed(2)} / 5`) : null,
     hbarChart(chartItems, { max: total }),
     tallyTable(rows, ["Option", "Count"]));
+}
+
+// Numeric answers: summary stats + histogram (bins with names on hover).
+function numberSummary(q, responses) {
+  const vals = [];
+  const names = [];
+  for (const r of responses) {
+    const v = (r.answers || {})[q.id];
+    if (typeof v === "number" && isFinite(v)) { vals.push(v); names.push(r.name || "(anonymous)"); }
+  }
+  if (!vals.length) return el("p", { class: "hint" }, "No numeric answers yet.");
+  const sorted = [...vals].sort((a, b) => a - b);
+  const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const median = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  const fmt = (n) => Number(n.toFixed(2)).toString();
+  const stats = el("p", {},
+    `n = ${vals.length} · mean ${fmt(mean)} · median ${fmt(median)} · range ${fmt(sorted[0])}–${fmt(sorted[sorted.length - 1])}`);
+
+  // Histogram: up to 10 bins over the observed range (single value -> 1 bin).
+  const lo = sorted[0], hi = sorted[sorted.length - 1];
+  const nBins = lo === hi ? 1 : Math.min(10, Math.max(3, Math.ceil(Math.sqrt(vals.length))));
+  const width = (hi - lo) / nBins || 1;
+  const bins = Array.from({ length: nBins }, (_, i) => ({
+    lo: lo + i * width, hi: lo + (i + 1) * width, n: 0, names: [],
+  }));
+  vals.forEach((v, i) => {
+    let b = Math.min(nBins - 1, Math.floor((v - lo) / width));
+    bins[b].n++;
+    bins[b].names.push(names[i]);
+  });
+  const items = bins.map((b) => ({
+    label: nBins === 1 ? fmt(b.lo) : `${fmt(b.lo)}–${fmt(b.hi)}`,
+    value: b.n, names: b.names,
+  }));
+  const table = tallyTable(items.map((it) => [it.label, it.value]), ["Range", "Count"]);
+  return el("div", {}, stats, hbarChart(items, { labelW: 130 }), table);
+}
+
+// Likert: per-statement stacked distribution across the scale + mean score.
+function likertSummary(q, responses) {
+  const cols = q.scale || ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
+  // Diverging palette: negative red-ish -> neutral grey -> positive green.
+  const palette = ["#c0392b", "#e67e22", "#9aa7b3", "#7fb069", "#22a06b", "#1a7f4e", "#135f3a"];
+  const colorFor = (i) => palette[Math.round((i / Math.max(1, cols.length - 1)) * (palette.length - 1))];
+  const rows = (q.rows || []).map((rowLabel) => {
+    const counts = cols.map(() => 0);
+    const names = cols.map(() => []);
+    let un = 0; const unNames = [];
+    for (const r of responses) {
+      const v = ((r.answers || {})[q.id] || {})[rowLabel];
+      const nm = r.name || "(anonymous)";
+      const ci = cols.indexOf(v);
+      if (ci >= 0) { counts[ci]++; names[ci].push(nm); }
+      else { un++; unNames.push(nm); }
+    }
+    const answered = counts.reduce((s, c) => s + c, 0);
+    const mean = answered
+      ? counts.reduce((s, c, i) => s + c * (i + 1), 0) / answered
+      : null;
+    return { rowLabel, counts, names, un, unNames, mean };
+  });
+  const legend = chartLegend(cols.map((c, i) => ({ name: c, color: colorFor(i) }))
+    .concat([{ name: "no answer", color: "#d5dbe2" }]));
+  const chart = stackedBarChart(rows.map((r) => ({
+    label: r.rowLabel,
+    parts: cols.map((c, i) => ({ value: r.counts[i], color: colorFor(i), name: c, names: r.names[i] }))
+      .concat([{ value: r.un, color: "#d5dbe2", name: "no answer", names: r.unNames }]),
+  })), { max: responses.length || 1 });
+  const table = tallyTable(
+    rows.map((r) => [r.rowLabel, ...r.counts, r.un, r.mean !== null ? r.mean.toFixed(2) : "—"]),
+    ["Statement", ...cols, "No answer", `Mean (1–${cols.length})`]);
+  return el("div", {}, legend, chart, table);
 }
 
 function textSummary(q, responses) {
@@ -260,6 +336,8 @@ async function exportSnapshot(survey, responses, id, anonymize, btn) {
     survey.questions.forEach((q, i) => {
       const card = el("div", { class: "card" }, el("h2", {}, `${i + 1}. ${q.label}`));
       if (q.type === "meeting") card.append(meetingSummary(q, rs, survey));
+      else if (q.type === "likert") card.append(likertSummary(q, rs));
+      else if (q.type === "number") card.append(numberSummary(q, rs));
       else if (q.type === "text" || q.type === "longtext") card.append(textSummary(q, rs));
       else card.append(choiceSummary(q, rs));
       cards.push(card);
@@ -388,6 +466,8 @@ function renderResults(survey, responses, id) {
   survey.questions.forEach((q, i) => {
     const card = el("div", { class: "card" }, el("h2", {}, `${i + 1}. ${q.label}`));
     if (q.type === "meeting") card.append(meetingSummary(q, responses, survey));
+    else if (q.type === "likert") card.append(likertSummary(q, responses));
+    else if (q.type === "number") card.append(numberSummary(q, responses));
     else if (q.type === "text" || q.type === "longtext") card.append(textSummary(q, responses));
     else card.append(choiceSummary(q, responses));
     cards.push(card);

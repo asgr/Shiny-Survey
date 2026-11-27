@@ -3,8 +3,9 @@
 
 const TOKEN_KEY = "survey-designer-token";
 const TYPE_LABELS = {
-  text: "Short text", longtext: "Long text", single: "Single choice",
-  multi: "Multiple choice", rating: "Rating 1–5", meeting: "Meeting grid",
+  text: "Short text", longtext: "Long text", yesno: "Yes / No",
+  single: "Single choice", multi: "Multiple choice", rating: "Rating 1–5",
+  number: "Number", likert: "Likert scale", meeting: "Meeting grid",
 };
 
 let survey = blankSurvey();
@@ -85,16 +86,62 @@ function questionEditor(q, i) {
     card.append(el("label", { class: "tg-ctl", style: "margin-top:8px" }, "Character limit (max 5000)", lim));
   }
 
-  if (q.type === "single" || q.type === "multi") {
+  if (q.type === "single" || q.type === "multi" || q.type === "yesno") {
     const opts = el("textarea", {
-      rows: 4, placeholder: "One option per line",
+      rows: q.type === "yesno" ? 2 : 4, placeholder: "One option per line",
       oninput: (e) => {
         q.options = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
         drawPreview();
       },
     });
     opts.value = (q.options || []).join("\n");
-    card.append(el("div", { class: "hint", style: "margin-top:8px" }, "Options, one per line:"), opts);
+    card.append(el("div", { class: "hint", style: "margin-top:8px" },
+      q.type === "yesno" ? "Options (add a third line like \"N/A\" if wanted):" : "Options, one per line:"), opts);
+    if (q.type === "single") {
+      const dd = el("input", { type: "checkbox",
+        onchange: (e) => { q.dropdown = e.target.checked; if (!q.dropdown) delete q.dropdown; drawPreview(); } });
+      dd.checked = !!q.dropdown;
+      card.append(el("label", { class: "option", style: "margin-top:8px" }, dd,
+        "Show as dropdown (compact for long option lists)"));
+    }
+  }
+
+  if (q.type === "number") {
+    const mkNum = (key, placeholder) => el("input", {
+      type: "number", step: "any", placeholder, style: "width:110px",
+      value: q[key] ?? "",
+      oninput: (e) => {
+        if (e.target.value === "") delete q[key];
+        else q[key] = Number(e.target.value);
+        drawPreview();
+      },
+    });
+    card.append(el("div", { class: "row", style: "margin-top:8px" },
+      el("label", { class: "tg-ctl" }, "Min (optional)", mkNum("min", "no min")),
+      el("label", { class: "tg-ctl" }, "Max (optional)", mkNum("max", "no max"))));
+  }
+
+  if (q.type === "likert") {
+    const rows = el("textarea", {
+      rows: 4, placeholder: "One statement per line",
+      oninput: (e) => {
+        q.rows = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+        drawPreview();
+      },
+    });
+    rows.value = (q.rows || []).join("\n");
+    const scale = el("textarea", {
+      rows: 2,
+      oninput: (e) => {
+        const cols = e.target.value.split("\n").map((s) => s.trim()).filter(Boolean);
+        q.scale = cols.length >= 2 ? cols : ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
+        drawPreview();
+      },
+    });
+    scale.value = (q.scale || []).join("\n");
+    card.append(
+      el("div", { class: "hint", style: "margin-top:8px" }, "Statements, one per line:"), rows,
+      el("div", { class: "hint", style: "margin-top:8px" }, "Scale columns, one per line (2–7; least to most positive):"), scale);
   }
 
   if (q.type === "meeting") {
@@ -135,6 +182,11 @@ function addQuestion(type) {
   if (type === "text") q.maxChars = 140;
   if (type === "longtext") q.maxChars = 5000;
   if (type === "single" || type === "multi") q.options = [];
+  if (type === "yesno") q.options = ["Yes", "No"];
+  if (type === "likert") {
+    q.rows = [];
+    q.scale = ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
+  }
   if (type === "meeting") { q.slots = []; q.choices = ["yes", "no"]; q.display = "grid"; }
   survey.questions.push(q);
   redraw();
@@ -181,8 +233,14 @@ async function publish() {
   if (!survey.questions.length) return setStatus("publish-status", "Add at least one question.", "error");
   for (const q of survey.questions) {
     if (!q.label.trim()) return setStatus("publish-status", "Every question needs text.", "error");
-    if ((q.type === "single" || q.type === "multi") && !(q.options || []).length) {
+    if ((q.type === "single" || q.type === "multi" || q.type === "yesno") && !(q.options || []).length) {
       return setStatus("publish-status", `Add options for: ${q.label}`, "error");
+    }
+    if (q.type === "likert" && (!(q.rows || []).length || (q.scale || []).length < 2)) {
+      return setStatus("publish-status", `Add statements and at least 2 scale columns for: ${q.label}`, "error");
+    }
+    if (q.type === "number" && q.min != null && q.max != null && q.min > q.max) {
+      return setStatus("publish-status", `Min exceeds max for: ${q.label}`, "error");
     }
     if (q.type === "meeting" && !(q.slots || []).length) {
       return setStatus("publish-status", `Add date/times for: ${q.label}`, "error");

@@ -116,7 +116,12 @@ commit and push.
 2. Paste your **designer token** once — it is stored only in your browser.
 3. Set title, anonymity (name field on/off), duplicate prevention, and cap.
 4. Add questions: short/long text (per-question character limits, defaults
-   140 / 5000), single/multiple choice, 1–5 rating, or a **meeting grid** —
+   140 / 5000), Yes/No (optional third option like N/A), single choice
+   (radios or **dropdown** for long lists), multiple choice, 1–5 rating,
+   **number** (optional min/max; results show mean/median/histogram),
+   **Likert scale** (statements × agreement columns, customizable 2–7
+   points; results show stacked distributions and mean scores), or a
+   **meeting grid** —
    a when2meet-style grid in 30-minute windows spanning up to 28 days
    (wide grids scroll horizontally). Drag a rectangle to pick candidate
    times (adjacent cells merge into one time range); click a selected cell
@@ -166,7 +171,11 @@ commit and push.
 
 Click **Results** next to a survey in the designer. You get:
 
-- bar charts + counts tables for choice/rating questions (mean for ratings)
+- bar charts + counts tables for choice/rating questions (mean for
+  ratings), with respondent names on hover
+- number questions: n / mean / median / range + histogram
+- Likert questions: stacked distribution per statement (diverging
+  colours, names on hover) + mean score table
 - meeting questions: availability bars, counts table, and a
   when2meet-style **heatmap** (greener = more overlap, names on hover,
   timezone-selectable)

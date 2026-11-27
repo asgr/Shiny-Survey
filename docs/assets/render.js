@@ -25,14 +25,48 @@ function renderQuestion(q, index, opts = {}) {
       counter.style.color = n >= max ? "var(--danger)" : "";
     });
     box.append(input, counter);
-  } else if (q.type === "single" || q.type === "multi") {
-    const inputType = q.type === "single" ? "radio" : "checkbox";
-    for (const opt of q.options || []) {
-      box.append(
-        el("label", { class: "option" },
-          el("input", { type: inputType, name, value: opt }), el("span", {}, opt))
-      );
+  } else if (q.type === "single" || q.type === "yesno" || q.type === "multi") {
+    const opts = q.type === "yesno" ? (q.options || ["Yes", "No"]) : (q.options || []);
+    if (q.type === "multi" || !q.dropdown) {
+      const inputType = q.type === "multi" ? "checkbox" : "radio";
+      for (const opt of opts) {
+        box.append(
+          el("label", { class: "option" },
+            el("input", { type: inputType, name, value: opt }), el("span", {}, opt))
+        );
+      }
+    } else {
+      // Dropdown: same single-choice data model, compact for long lists.
+      const sel = el("select", { name });
+      sel.append(el("option", { value: "" }, "— choose —"));
+      for (const opt of opts) sel.append(el("option", { value: opt }, opt));
+      box.append(sel);
     }
+  } else if (q.type === "number") {
+    const attrs = { type: "number", name, step: "any", style: "max-width:180px" };
+    if (q.min !== undefined && q.min !== null) attrs.min = q.min;
+    if (q.max !== undefined && q.max !== null) attrs.max = q.max;
+    box.append(el("input", attrs));
+    if (q.min != null || q.max != null) {
+      box.append(el("div", { class: "hint" },
+        `Allowed range: ${q.min ?? "−∞"} to ${q.max ?? "+∞"}`));
+    }
+  } else if (q.type === "likert") {
+    const cols = q.scale || ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
+    const table = el("table", { class: "grid" });
+    table.append(el("tr", {}, el("th", {}, ""), cols.map((c) => el("th", {}, c))));
+    (q.rows || []).forEach((rowLabel, i) => {
+      const rowName = `${name}__${i}`;
+      table.append(
+        el("tr", {},
+          el("td", {}, rowLabel),
+          cols.map((c) =>
+            el("td", {}, el("input", { type: "radio", name: rowName, value: c, "data-row": rowLabel }))
+          )
+        )
+      );
+    });
+    box.append(table);
   } else if (q.type === "rating") {
     const row = el("div", { class: "rating" });
     for (let v = 1; v <= 5; v++) {

@@ -164,11 +164,32 @@ function validateAnswers(survey, raw) {
       const maxChars = Math.min(5000, Number(q.maxChars) || (q.type === "text" ? 140 : 5000));
       if (typeof v !== "string" || v.length > maxChars) return { error: "Text answer too long" };
       answers[q.id] = v;
-    } else if (q.type === "single" || q.type === "rating") {
+    } else if (q.type === "single" || q.type === "yesno" || q.type === "rating") {
       if (empty) { answers[q.id] = null; continue; }
-      const allowed = q.type === "rating" ? ["1", "2", "3", "4", "5"] : q.options || [];
+      const allowed = q.type === "rating" ? ["1", "2", "3", "4", "5"]
+        : q.type === "yesno" ? (q.options && q.options.length ? q.options : ["Yes", "No"])
+        : q.options || [];
       if (!allowed.includes(v)) return { error: "Invalid choice" };
       answers[q.id] = v;
+    } else if (q.type === "number") {
+      if (empty) { answers[q.id] = null; continue; }
+      const n = typeof v === "number" ? v : NaN;
+      if (!isFinite(n)) return { error: "Invalid number" };
+      if (q.min != null && n < q.min) return { error: "Number below minimum" };
+      if (q.max != null && n > q.max) return { error: "Number above maximum" };
+      answers[q.id] = n;
+    } else if (q.type === "likert") {
+      const cols = q.scale || ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"];
+      const grid = {};
+      for (const row of q.rows || []) {
+        const rv = v && typeof v === "object" ? v[row] : null;
+        if (rv !== null && rv !== undefined && !cols.includes(rv)) return { error: "Invalid scale answer" };
+        if (q.required && (rv === null || rv === undefined)) {
+          return { error: `Missing required answer: ${q.label}` };
+        }
+        grid[row] = rv ?? null;
+      }
+      answers[q.id] = grid;
     } else if (q.type === "multi") {
       if (empty) { answers[q.id] = []; continue; }
       if (!Array.isArray(v) || v.some((x) => !(q.options || []).includes(x))) {

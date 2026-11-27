@@ -75,8 +75,8 @@ records_to_df <- function(records) {
     for (qid in names(r$answers)) {
       a <- r$answers[[qid]]
       if (is.list(a) && !is.null(names(a))) {
-        # meeting grid: named list slot -> yes/no/maybe, plus optional
-        # "<slot> (parts)" lists of exact 30-min ISO instants
+        # grid answers (meeting or likert): named list row -> value, plus
+        # optional "<slot> (parts)" lists of exact 30-min ISO instants
         for (slot in names(a)) {
           val <- a[[slot]]
           if (is.list(val) || length(val) > 1) {
@@ -195,6 +195,38 @@ cell_tally <- function(df, question_id, survey_id,
   out <- out[order(-out$available, out$utc), ]
   rownames(out) <- NULL
   out[, c("local", "utc", "available")]
+}
+
+# Likert summary: per-statement counts across the scale plus a mean score
+# (columns scored 1..k in the definition's scale order).
+likert_tally <- function(df, question_id, survey_id, definition = NULL, ...) {
+  def <- definition %||% fetch_definition(survey_id, ...)
+  matches <- Filter(function(x) identical(x$id, question_id), def$questions)
+  if (length(matches) == 0) stop("Question ", question_id, " not in survey definition")
+  q <- matches[[1]]
+  cols <- unlist(q$scale)
+  do.call(rbind, lapply(unlist(q$rows), function(rowLabel) {
+    cn <- paste0(question_id, ": ", rowLabel)
+    vals <- if (cn %in% names(df)) df[[cn]] else rep(NA_character_, nrow(df))
+    counts <- vapply(cols, function(c) sum(vals == c, na.rm = TRUE), integer(1))
+    answered <- sum(counts)
+    mean_score <- if (answered) sum(counts * seq_along(cols)) / answered else NA_real_
+    as.data.frame(c(
+      list(statement = rowLabel),
+      stats::setNames(as.list(counts), cols),
+      list(no_answer = sum(is.na(vals)), mean = round(mean_score, 2))
+    ), stringsAsFactors = FALSE)
+  }))
+}
+
+# Numeric question: convert a column to numeric (answers are stored as text
+# in the data frame) and summarize.
+number_summary <- function(df, question_id) {
+  v <- suppressWarnings(as.numeric(df[[question_id]]))
+  v <- v[is.finite(v)]
+  if (!length(v)) return(NULL)
+  list(n = length(v), mean = mean(v), median = stats::median(v),
+       min = min(v), max = max(v), values = v)
 }
 
 # Convenience: fetch and write a CSV next to your analysis.
