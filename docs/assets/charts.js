@@ -17,8 +17,11 @@ function svgEl(tag, attrs = {}, ...children) {
   return node;
 }
 
-// items: [{label, value, color?}] — one horizontal bar per item.
-// max: scale maximum (defaults to largest value). valueSuffix for tooltips.
+// items: [{label, value, color?, names?}] — one horizontal bar per item.
+// max: scale maximum (defaults to largest value). names appear in tooltips.
+function namesSuffix(names) {
+  return names && names.length ? ` — ${names.join(", ")}` : "";
+}
 function hbarChart(items, { max, width = 560, barH = 22, gap = 6, labelW = 210, color = "#2563eb" } = {}) {
   if (!items.length) return el("p", { class: "hint" }, "No data to chart yet.");
   const scaleMax = Math.max(max || 0, ...items.map((d) => d.value), 1);
@@ -38,7 +41,7 @@ function hbarChart(items, { max, width = 560, barH = 22, gap = 6, labelW = 210, 
       }, d.label.length > 34 ? d.label.slice(0, 33) + "\u2026" : d.label),
       svgEl("rect", { x: labelW, y, width: plotW, height: barH, fill: "#eef2f6", rx: 3 }),
       svgEl("rect", { x: labelW, y, width: w, height: barH, fill: d.color || color, rx: 3 },
-        svgEl("title", {}, `${d.label}: ${d.value}`)),
+        svgEl("title", {}, `${d.label}: ${d.value}${namesSuffix(d.names)}`)),
       svgEl("text", {
         x: labelW + plotW + 8, y: y + barH / 2 + 4, "font-size": 12, fill: "#5b6b7b",
       }, String(d.value))
@@ -72,7 +75,7 @@ function stackedBarChart(items, { max, width = 560, barH = 22, gap = 6, labelW =
       if (!p.value) continue;
       const w = (p.value / scaleMax) * plotW;
       svg.append(svgEl("rect", { x, y, width: w, height: barH, fill: p.color },
-        svgEl("title", {}, `${d.label} — ${p.name}: ${p.value}`)));
+        svgEl("title", {}, `${d.label} — ${p.name}: ${p.value}${namesSuffix(p.names)}`)));
       x += w;
     }
     svg.append(svgEl("text", {

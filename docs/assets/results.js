@@ -56,23 +56,26 @@ function tallyTable(rows, headers) {
 
 function choiceSummary(q, responses) {
   const counts = {};
+  const who = {}; // option -> respondent names (for bar tooltips)
   const opts = q.type === "rating" ? ["1", "2", "3", "4", "5"] : (q.options || []);
-  for (const o of opts) counts[o] = 0;
+  for (const o of opts) { counts[o] = 0; who[o] = []; }
   let unanswered = 0;
+  const unansweredNames = [];
+  const label = (r) => r.name || "(anonymous)";
   for (const r of responses) {
     const v = (r.answers || {})[q.id];
     if (q.type === "multi") {
-      if (!Array.isArray(v) || !v.length) { unanswered++; continue; }
-      for (const x of v) if (x in counts) counts[x]++;
+      if (!Array.isArray(v) || !v.length) { unanswered++; unansweredNames.push(label(r)); continue; }
+      for (const x of v) if (x in counts) { counts[x]++; who[x].push(label(r)); }
     } else {
-      if (v === null || v === undefined || v === "") { unanswered++; continue; }
-      if (v in counts) counts[v]++;
+      if (v === null || v === undefined || v === "") { unanswered++; unansweredNames.push(label(r)); continue; }
+      if (v in counts) { counts[v]++; who[v].push(label(r)); }
     }
   }
   const rows = opts.map((o) => [o, counts[o]]);
   if (unanswered) rows.push(["(no answer)", unanswered]);
-  const chartItems = opts.map((o) => ({ label: o, value: counts[o] }));
-  if (unanswered) chartItems.push({ label: "(no answer)", value: unanswered, color: "#9aa7b3" });
+  const chartItems = opts.map((o) => ({ label: o, value: counts[o], names: who[o] }));
+  if (unanswered) chartItems.push({ label: "(no answer)", value: unanswered, color: "#9aa7b3", names: unansweredNames });
   const total = responses.length || 1;
   const mean = q.type === "rating"
     ? responses.reduce((s, r) => s + (Number((r.answers || {})[q.id]) || 0), 0) /
@@ -106,17 +109,19 @@ function meetingSummary(q, responses, survey) {
   // available (any expressed availability is a yes).
   const slotRows = (q.slots || []).map((slot) => {
     let yes = 0, no = 0, un = 0;
+    const yesNames = [], noNames = [], unNames = [];
     for (const r of responses) {
       const a = (r.answers || {})[q.id] || {};
       const v = a[slot];
       const hasParts = Array.isArray(a[`${slot} (parts)`]) && a[`${slot} (parts)`].length;
-      if (v === "yes" || v === "maybe" || hasParts) yes++;
-      else if (v === "no") no++;
-      else un++;
+      const nm = r.name || "(anonymous)";
+      if (v === "yes" || v === "maybe" || hasParts) { yes++; yesNames.push(nm); }
+      else if (v === "no") { no++; noNames.push(nm); }
+      else { un++; unNames.push(nm); }
     }
-    return [slot, yes, no, un];
+    return { row: [slot, yes, no, un], yesNames, noNames, unNames };
   });
-  slotRows.sort((a, b) => b[1] - a[1]);
+  slotRows.sort((a, b) => b.row[1] - a.row[1]);
   const total = responses.length;
   const box = el("div", {},
     chartLegend([
@@ -125,17 +130,17 @@ function meetingSummary(q, responses, survey) {
       { name: "no answer", color: "#9aa7b3" },
     ]),
     stackedBarChart(
-      slotRows.map(([slot, yes, no, un]) => ({
+      slotRows.map(({ row: [slot, yes, no, un], yesNames, noNames, unNames }) => ({
         label: slot,
         parts: [
-          { value: yes, color: "#22a06b", name: "available" },
-          { value: no, color: "#d5dbe2", name: "not available" },
-          { value: un, color: "#9aa7b3", name: "no answer" },
+          { value: yes, color: "#22a06b", name: "available", names: yesNames },
+          { value: no, color: "#d5dbe2", name: "not available", names: noNames },
+          { value: un, color: "#9aa7b3", name: "no answer", names: unNames },
         ],
       })),
       { max: total || 1 }
     ),
-    tallyTable(slotRows, ["Time", "Available", "Not available", "No answer"]));
+    tallyTable(slotRows.map((s) => s.row), ["Time", "Available", "Not available", "No answer"]));
 
   if (!blocks) return box;
 
